@@ -1,0 +1,42 @@
+[project]
+name = 'zipline-bundle-polygon'
+version = '0.1.0'
+description = 'A zipline-reloaded data provider bundle for Polygon.io'
+authors = [
+    { name = 'Jim White', email = 'jim@fovi.com' },
+]
+license = { file = 'LICENSE' }
+readme = 'README.md'
+keywords = ['zipline', 'data-bundle', 'finance']
+classifiers = [
+    'Programming Language :: Python :: 3',
+    'License :: OSI Approved :: Apache Software License',
+    'Operating System :: OS Independent',
+]
+
+requires-python = '>=3.11'
+dependencies = [
+    'pandas >=2.2,<3',
+    'pytz >=2018.5',
+    'requests >=2.9.1',
+    'exchange-calendars >=4.2.4',
+    'bcolz-zipline >=1.2.6',
+    'numpy < 2',
+    'setuptools >=42.0.0',
+    'toolz >=0.8.2',
+    'zipline-reloaded >=3.0.0'
+]
+
+[project.urls]
+Repository = 'https://github.com/fovi-llc/zipline-bundle-polygon'
+
+[build-system]
+build-backend = 'setuptools.build_meta'
+requires = [
+    'setuptools>=42.0.0',
+    'setuptools_scm[toml]>=6.2',
+    'wheel>=0.36.0',
+    # 'Cython>=0.29.21',
+    #    'Cython>=3',
+    # 'oldest-supported-numpy; python_version>="3.8"',
+]
