@@ -18,7 +18,7 @@ def convert_timestamp(x):
 
 
 def convert_minute_csv_to_parquet(path, extension, compression="infer"):
-    parquet_path = path.replace(extension, ".parquet")
+    parquet_path = path.removesuffix(extension) + ".parquet"
     print(path)
     try:
         bars_df = pd.read_csv(
@@ -55,13 +55,13 @@ def process_all_minute_csv_to_parquet(
     if force:
         print(f"Removing Parquet files that may exist for {len(paths)} CSV files.")
         for path in paths:
-            parquet_path = path.replace(extension, ".parquet")
+            parquet_path = path.removesuffix(extension) + ".parquet"
             if os.path.exists(parquet_path):
                 print(f"Removing {parquet_path}")
                 os.remove(parquet_path)
     else:
         csv_file_count = len(paths)
-        paths = [path for path in paths if not os.path.exists(path.replace(extension, ".parquet"))]
+        paths = [path for path in paths if not os.path.exists(path.removesuffix(extension) + ".parquet")]
         if len(paths) < csv_file_count:
             print(f"Skipping {csv_file_count - len(paths)} already converted files.")
     if max_workers == 1:
