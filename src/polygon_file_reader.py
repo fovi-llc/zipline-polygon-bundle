@@ -17,11 +17,8 @@ def convert_timestamp(x):
     )
 
 
-def convert_minute_csv_to_parquet(path, extension, compression="infer", force=False):
+def convert_minute_csv_to_parquet(path, extension, compression="infer"):
     parquet_path = path.replace(extension, ".parquet")
-    if not force and os.path.exists(parquet_path):
-        print(f"Skipping {path} because {parquet_path} exists")
-        return
     print(path)
     try:
         bars_df = pd.read_csv(
@@ -54,10 +51,22 @@ def process_all_minute_csv_to_parquet(
 ):
     """Big CSV files are very slow to read.  So we only read them once and convert them to Parquet."""
     csv_pattern = f"**/*{extension}" if recursive else f"*{extension}"
-    paths = glob.glob(os.path.join(data_dir, csv_pattern), recursive=recursive)
-    if not max_workers or max_workers < 2:
+    paths = list(glob.glob(os.path.join(data_dir, csv_pattern), recursive=recursive))
+    if force:
+        print(f"Removing Parquet files that may exist for {len(paths)} CSV files.")
         for path in paths:
-            convert_minute_csv_to_parquet(path, extension=extension, compression=compression, force=force)
+            parquet_path = path.replace(extension, ".parquet")
+            if os.path.exists(parquet_path):
+                print(f"Removing {parquet_path}")
+                os.remove(parquet_path)
+    else:
+        csv_file_count = len(paths)
+        paths = [path for path in paths if not os.path.exists(path.replace(extension, ".parquet"))]
+        if len(paths) < csv_file_count:
+            print(f"Skipping {csv_file_count - len(paths)} already converted files.")
+    if max_workers == 1:
+        for path in paths:
+            convert_minute_csv_to_parquet(path, extension=extension, compression=compression)
     else:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             executor.map(
@@ -65,9 +74,8 @@ def process_all_minute_csv_to_parquet(
                 paths,
                 [extension] * len(paths),
                 [compression] * len(paths),
-                [force] * len(paths),
             )
 
 
 if __name__ == "__main__":
-    process_all_minute_csv_to_parquet(data_dir="data/polygon/flatfiles/us_stocks_sip/minute_aggs_v1", max_workers=8)
+    process_all_minute_csv_to_parquet(data_dir="data/polygon/flatfiles/us_stocks_sip/minute_aggs_v1")
