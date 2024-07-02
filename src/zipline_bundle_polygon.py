@@ -2,10 +2,48 @@ from zipline.data.bundles import register
 import pandas as pd
 from os import listdir
 from exchange_calendars import get_calendar
+from .tickers_and_names import load_all_tickers
 
 
 # Change the path to where you have your data
 path = "/Users/jim/Projects/zipline-bundle-polygon/data"
+
+
+def get_ticker_universe(path):
+    start_date = datetime(2019, 1, 1)
+    end_date = datetime(2023, 12, 31)
+    tickers_csv_path = f"data/tickers/us_tickers_{start_date.strftime('%Y-%m-%d')}-{end_date.strftime('%Y-%m-%d')}.csv"
+    print(f"{tickers_csv_path=}")
+    if not os.path.exists(tickers_csv_path):
+        assert (
+            len(
+                load_all_tickers(
+                    start_date=start_date, end_date=end_date, fetch_missing=True
+                )
+            )
+            > 6000
+        )
+    merged_tickers = pd.read_csv(
+        tickers_csv_path,
+        #  dtype={'ticker': str, 'name': str, 'exchange': str, 'composite_figi': str, 'currency_name': str,
+        #         'locale': str, 'market': str, 'primary_exchange':str, 'share_class_figi': str, 'type': str},
+        converters={
+            "ticker": lambda x: str(x).strip(),
+            "start_date": lambda x: pd.to_datetime(x),
+            "cik": lambda x: int(x),
+            "name": lambda x: str(x).strip(),
+            "end_date": lambda x: pd.to_datetime(x),
+            "composite_figi": lambda x: str(x).strip().upper(),
+            "share_class_figi": lambda x: str(x).strip().upper(),
+            "currency_name": lambda x: str(x).strip().lower(),
+            "locale": lambda x: str(x).strip().lower(),
+            "market": lambda x: str(x).strip().lower(),
+            "primary_exchange": lambda x: str(x).strip().upper(),
+            "type": lambda x: str(x).strip().upper(),
+        },
+    )
+    merged_tickers.info()
+    return merged_tickers
 
 
 def polygon_equities_bundle(

@@ -18,7 +18,6 @@ def convert_timestamp(x):
 
 
 def convert_minute_csv_to_parquet(path, extension, compression="infer"):
-    parquet_path = path.removesuffix(extension) + ".parquet"
     print(path)
     try:
         bars_df = pd.read_csv(
@@ -32,8 +31,10 @@ def convert_minute_csv_to_parquet(path, extension, compression="infer"):
             return
         if len(bars_df) < 100000:
             print(f"WARNING: Short {path}")
-        bars_df.set_index(["window_start", "ticker"], inplace=True)
-        bars_df.sort_index(inplace=True)
+        # Don't change the data.  We're just converting to Parquet to save time.
+        # bars_df.set_index(["window_start", "ticker"], inplace=True)
+        # bars_df.sort_index(inplace=True)
+        parquet_path = path.removesuffix(extension) + ".parquet"
         bars_df.to_parquet(parquet_path)
         if not os.path.exists(parquet_path):
             print(f"ERROR: Failed to write {parquet_path}")
