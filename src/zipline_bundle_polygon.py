@@ -5,7 +5,7 @@ from exchange_calendars import get_calendar
 
 
 # Change the path to where you have your data
-path = "/Users/jim/Projects/sabirjana-quant-blog/RSI/data/data"
+path = "/Users/jim/Projects/zipline-bundle-polygon/data"
 
 
 def polygon_equities_bundle(
