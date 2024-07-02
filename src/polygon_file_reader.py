@@ -43,28 +43,31 @@ def convert_minute_csv_to_parquet(path, extension, compression="infer", force=Fa
     except Exception as e:
         print(f"Failed for {path}: {e}")
 
+
 def process_all_minute_csv_to_parquet(
     data_dir,
     recursive=True,
     extension=".csv.gz",
     compression="infer",
     force=False,
-    max_workers=8,
+    max_workers=None,
 ):
     """Big CSV files are very slow to read.  So we only read them once and convert them to Parquet."""
     csv_pattern = f"**/*{extension}" if recursive else f"*{extension}"
-    # for path in glob.glob(os.path.join(data_dir, csv_pattern), recursive=recursive):
-    #     convert_minute_csv_to_parquet(path, extension=extension, compression=compression, force=force)
     paths = glob.glob(os.path.join(data_dir, csv_pattern), recursive=recursive)
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        executor.map(
-            convert_minute_csv_to_parquet,
-            paths,
-            [extension] * len(paths),
-            [compression] * len(paths),
-            [force] * len(paths),
-        )
+    if not max_workers or max_workers < 2:
+        for path in paths:
+            convert_minute_csv_to_parquet(path, extension=extension, compression=compression, force=force)
+    else:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            executor.map(
+                convert_minute_csv_to_parquet,
+                paths,
+                [extension] * len(paths),
+                [compression] * len(paths),
+                [force] * len(paths),
+            )
 
 
 if __name__ == "__main__":
-    process_all_minute_csv_to_parquet(data_dir="data/polygon/flatfiles/us_stocks_sip/minute_aggs_v1")
+    process_all_minute_csv_to_parquet(data_dir="data/polygon/flatfiles/us_stocks_sip/minute_aggs_v1", max_workers=8)
