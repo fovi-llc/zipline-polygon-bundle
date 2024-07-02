@@ -21,6 +21,8 @@ dependencies = [
     'requests >=2.9.1',
     'exchange-calendars >=4.2.4',
     'bcolz-zipline >=1.2.6',
+    'pyarrow',
+    'fastparquet',
     'numpy < 2',
     'setuptools >=42.0.0',
     'toolz >=0.8.2',
