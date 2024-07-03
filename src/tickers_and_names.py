@@ -1,16 +1,13 @@
+from config import get_tickers_dir
+
 import datetime
 import os
 import pandas as pd
 import polygon
 import logging
 import functools
+
 from zipline.utils.calendar_utils import get_calendar
-
-
-TICKER_DATA_DIR = os.path.join("data", "tickers")
-
-# ["NYSE", "stock", "NASDAQ", "BATS", "DJIA", "DOW"] all refer to the same calendar.
-MARKET_CALENDAR = get_calendar("NYSE")
 
 
 @functools.lru_cache(maxsize=None)
@@ -224,7 +221,7 @@ def fetch_all_tickers(request_date=None, only_one_row_per_ticker=False):
 
 
 def ticker_file_path(date: datetime.date):
-    ticker_year_dir = os.path.join(TICKER_DATA_DIR, f"tickers_{date.year}")
+    ticker_year_dir = os.path.join(get_tickers_dir(), f"tickers_{date.year}")
     os.makedirs(ticker_year_dir, exist_ok=True)
     return os.path.join(ticker_year_dir, f"tickers_{date.isoformat()}.parquet")
 
@@ -262,12 +259,14 @@ def load_tickers_for_date(date: datetime.date, fetch_missing=False):
 
 
 def load_all_tickers(
-    start_date: datetime.date, end_date: datetime.date, fetch_missing=False
+    start_date: datetime.date, end_date: datetime.date, market_calendar=None, fetch_missing=False
 ):
+    if market_calendar is None:
+        market_calendar = get_calendar("NYSE")
     all_tickers = pd.concat(
         [
             load_tickers_for_date(date.date(), fetch_missing=fetch_missing)
-            for date in MARKET_CALENDAR.trading_index(
+            for date in market_calendar.trading_index(
                 start=start_date, end=end_date, period="1D"
             )
         ]
