@@ -2,19 +2,28 @@ import os
 import glob
 import pandas as pd
 from concurrent.futures import ProcessPoolExecutor
+from config import get_asset_files_dir
 
 
 def convert_timestamp(x):
-    """Some Polygon timestamps are in nanoseconds, some in milliseconds, some in seconds."""
-    unix_time = int(x)
-    return pd.to_datetime(
-        unix_time,
-        unit=(
-            "ns"
-            if unix_time > 100_000_000_000_000
-            else "ms" if unix_time > 10_000_000_000 else "s"
-        ),
-    )
+    """
+    Polygon timestamps are in nanoseconds, milliseconds, or seconds.
+    We can decide automatically based on the size of the number because the only overlaps
+    are during the first few months of 1970.  And zero is always the same in any case.
+    """
+    try:
+        unix_time = int(x)
+        return pd.to_datetime(
+            unix_time,
+            unit=(
+                "ns"
+                if unix_time > 100_000_000_000_000
+                else "ms" if unix_time > 10_000_000_000 else "s"
+            ),
+        )
+    except Exception as e:
+        print(f"ERROR: Failed to convert '{x}': {e}")
+        return pd.NaT
 
 
 def convert_minute_csv_to_parquet(path, extension, compression="infer"):
@@ -43,7 +52,7 @@ def convert_minute_csv_to_parquet(path, extension, compression="infer"):
 
 
 def process_all_minute_csv_to_parquet(
-    data_dir,
+    minute_aggs_dir=os.path.join(get_asset_files_dir(), "minute_aggs_v1"),
     recursive=True,
     extension=".csv.gz",
     compression="infer",
@@ -52,7 +61,9 @@ def process_all_minute_csv_to_parquet(
 ):
     """Big CSV files are very slow to read.  So we only read them once and convert them to Parquet."""
     csv_pattern = f"**/*{extension}" if recursive else f"*{extension}"
-    paths = list(glob.glob(os.path.join(data_dir, csv_pattern), recursive=recursive))
+    paths = list(
+        glob.glob(os.path.join(minute_aggs_dir, csv_pattern), recursive=recursive)
+    )
     if force:
         print(f"Removing Parquet files that may exist for {len(paths)} CSV files.")
         for path in paths:
@@ -62,12 +73,18 @@ def process_all_minute_csv_to_parquet(
                 os.remove(parquet_path)
     else:
         csv_file_count = len(paths)
-        paths = [path for path in paths if not os.path.exists(path.removesuffix(extension) + ".parquet")]
+        paths = [
+            path
+            for path in paths
+            if not os.path.exists(path.removesuffix(extension) + ".parquet")
+        ]
         if len(paths) < csv_file_count:
             print(f"Skipping {csv_file_count - len(paths)} already converted files.")
     if max_workers == 1:
         for path in paths:
-            convert_minute_csv_to_parquet(path, extension=extension, compression=compression)
+            convert_minute_csv_to_parquet(
+                path, extension=extension, compression=compression
+            )
     else:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             executor.map(
@@ -79,4 +96,4 @@ def process_all_minute_csv_to_parquet(
 
 
 if __name__ == "__main__":
-    process_all_minute_csv_to_parquet(data_dir="data/polygon/flatfiles/us_stocks_sip/minute_aggs_v1")
+    process_all_minute_csv_to_parquet()

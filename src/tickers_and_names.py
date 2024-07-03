@@ -4,7 +4,7 @@ import pandas as pd
 import polygon
 import logging
 import functools
-from exchange_calendars import get_calendar
+from zipline.utils.calendar_utils import get_calendar
 
 
 TICKER_DATA_DIR = os.path.join("data", "tickers")

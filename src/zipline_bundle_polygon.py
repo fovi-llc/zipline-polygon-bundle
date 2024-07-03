@@ -1,8 +1,10 @@
 from zipline.data.bundles import register
+from zipline.utils.calendar_utils import get_calendar
+
+from tickers_and_names import load_all_tickers
+
 import pandas as pd
 from os import listdir
-from exchange_calendars import get_calendar
-from .tickers_and_names import load_all_tickers
 
 
 # Change the path to where you have your data
