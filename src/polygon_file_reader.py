@@ -2,7 +2,7 @@ import os
 import glob
 import pandas as pd
 from concurrent.futures import ProcessPoolExecutor
-from config import get_asset_files_dir
+from config import get_minute_aggs_dir
 
 
 def convert_timestamp(x):
@@ -52,7 +52,7 @@ def convert_minute_csv_to_parquet(path, extension, compression="infer"):
 
 
 def process_all_minute_csv_to_parquet(
-    minute_aggs_dir=os.path.join(get_asset_files_dir(), "minute_aggs_v1"),
+    minute_aggs_dir,
     recursive=True,
     extension=".csv.gz",
     compression="infer",
@@ -96,4 +96,4 @@ def process_all_minute_csv_to_parquet(
 
 
 if __name__ == "__main__":
-    process_all_minute_csv_to_parquet()
+    process_all_minute_csv_to_parquet(get_minute_aggs_dir())

@@ -267,8 +267,8 @@ def load_all_tickers(
     all_tickers = pd.concat(
         [
             load_tickers_for_date(date.date(), fetch_missing=fetch_missing)
-            for date in MARKET_CALENDAR.valid_days(
-                start_date=start_date, end_date=end_date
+            for date in MARKET_CALENDAR.trading_index(
+                start=start_date, end=end_date, period="1D"
             )
         ]
     )
@@ -285,8 +285,7 @@ def merge_tickers(all_tickers: pd.DataFrame):
     all_tickers.dropna(subset=["name", "primary_exchange"], inplace=True)
 
     merged_tickers = (
-        all_tickers
-        .sort_values("last_updated_utc")
+        all_tickers.sort_values("last_updated_utc")
         .groupby(["ticker", "cik", "name"])
         .agg(
             {

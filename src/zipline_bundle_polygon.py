@@ -2,19 +2,18 @@ from zipline.data.bundles import register
 from zipline.utils.calendar_utils import get_calendar
 
 from tickers_and_names import load_all_tickers
+from config import get_tickers_csv_path
 
+from datetime import datetime
 import pandas as pd
+import os
 from os import listdir
 
 
-# Change the path to where you have your data
-path = "/Users/jim/Projects/zipline-bundle-polygon/data"
-
-
-def get_ticker_universe(path):
-    start_date = datetime(2019, 1, 1)
-    end_date = datetime(2023, 12, 31)
-    tickers_csv_path = f"data/tickers/us_tickers_{start_date.strftime('%Y-%m-%d')}-{end_date.strftime('%Y-%m-%d')}.csv"
+def get_ticker_universe():
+    start_date = datetime(2021, 1, 1)
+    end_date = datetime(2021, 3, 3)
+    tickers_csv_path = get_tickers_csv_path(start_date=start_date, end_date=end_date)
     print(f"{tickers_csv_path=}")
     if not os.path.exists(tickers_csv_path):
         assert (
@@ -65,9 +64,10 @@ def polygon_equities_bundle(
     # Get list of files from path
     # Slicing off the last part
     # 'example.csv'[:-4] = 'example'
-    symbols = [f[:-4] for f in listdir(path)]
+    tickers = get_ticker_universe()
+    print(f"{tickers=}")
 
-    if not symbols:
+    if not tickers:
         raise ValueError("No symbols found in folder.")
 
     # Prepare an empty DataFrame for dividends
