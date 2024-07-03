@@ -1,3 +1,4 @@
+import datetime
 import os
 
 
@@ -14,6 +15,12 @@ def get_tickers_dir():
         "POLYGON_TICKERS_DIR",
         os.path.join(os.path.join(get_data_dir(), "tickers"), get_asset_subdir()),
     )
+
+
+def ticker_file_path(date: datetime.date):
+    ticker_year_dir = os.path.join(get_tickers_dir(), f"tickers_{date.year}")
+    os.makedirs(ticker_year_dir, exist_ok=True)
+    return os.path.join(ticker_year_dir, f"tickers_{date.isoformat()}.parquet")
 
 
 def get_tickers_csv_path(start_date, end_date):

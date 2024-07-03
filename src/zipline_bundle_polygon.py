@@ -16,14 +16,10 @@ def get_ticker_universe():
     tickers_csv_path = get_tickers_csv_path(start_date=start_date, end_date=end_date)
     print(f"{tickers_csv_path=}")
     if not os.path.exists(tickers_csv_path):
-        assert (
-            len(
-                load_all_tickers(
-                    start_date=start_date, end_date=end_date, fetch_missing=True
-                )
-            )
-            > 6000
+        merged_tickers = load_all_tickers(
+            start_date=start_date, end_date=end_date, fetch_missing=True
         )
+        merged_tickers.to_csv(tickers_csv_path, index=False)
     merged_tickers = pd.read_csv(
         tickers_csv_path,
         #  dtype={'ticker': str, 'name': str, 'exchange': str, 'composite_figi': str, 'currency_name': str,

@@ -1,4 +1,4 @@
-from config import get_tickers_dir
+from config import get_tickers_dir, ticker_file_path
 
 import datetime
 import os
@@ -220,10 +220,6 @@ def fetch_all_tickers(request_date=None, only_one_row_per_ticker=False):
     return active_tickers
 
 
-def ticker_file_path(date: datetime.date):
-    ticker_year_dir = os.path.join(get_tickers_dir(), f"tickers_{date.year}")
-    os.makedirs(ticker_year_dir, exist_ok=True)
-    return os.path.join(ticker_year_dir, f"tickers_{date.isoformat()}.parquet")
 
 
 def ticker_file_exists(date: datetime.date):
