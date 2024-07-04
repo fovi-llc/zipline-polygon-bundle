@@ -1,24 +1,18 @@
 from zipline.data.bundles import register
-from zipline.utils.calendar_utils import get_calendar
 
-from tickers_and_names import load_all_tickers
-from config import get_tickers_csv_path
+from config import PolygonConfig
+from tickers_and_names import PolygonAssets
 
-from datetime import datetime
 import pandas as pd
 import os
-from os import listdir
 
 
-def get_ticker_universe():
-    start_date = datetime(2021, 1, 1)
-    end_date = datetime(2021, 3, 3)
-    tickers_csv_path = get_tickers_csv_path(start_date=start_date, end_date=end_date)
+def get_ticker_universe(config: PolygonConfig):
+    assets = PolygonAssets(config)
+    tickers_csv_path = config.tickers_csv_path
     print(f"{tickers_csv_path=}")
     if not os.path.exists(tickers_csv_path):
-        merged_tickers = load_all_tickers(
-            start_date=start_date, end_date=end_date, fetch_missing=True
-        )
+        merged_tickers = assets.load_all_tickers(fetch_missing=True)
         merged_tickers.to_csv(tickers_csv_path, index=False)
     merged_tickers = pd.read_csv(
         tickers_csv_path,
@@ -49,58 +43,74 @@ def polygon_equities_bundle(
     minute_bar_writer,
     daily_bar_writer,
     adjustment_writer,
-    calendar,
+    calendar_name,
     start_session,
     end_session,
     cache,
     show_progress,
     output_dir,
 ):
+    config = PolygonConfig(environ=environ, calendar_name=calendar_name)
+    if config.api_key is None:
+        raise ValueError(
+            "Please set your POLYGON_API_KEY environment variable and retry."
+        )
 
-    # Get list of files from path
-    # Slicing off the last part
-    # 'example.csv'[:-4] = 'example'
-    tickers = get_ticker_universe()
-    print(f"{tickers=}")
-
-    if not tickers:
-        raise ValueError("No symbols found in folder.")
-
-    # Prepare an empty DataFrame for dividends
-    divs = pd.DataFrame(
-        columns=["sid", "amount", "ex_date", "record_date", "declared_date", "pay_date"]
+    raw_data = fetch_data_table(
+        api_key, show_progress, environ.get("QUANDL_DOWNLOAD_ATTEMPTS", 5)
     )
+    asset_metadata = gen_asset_metadata(raw_data[["symbol", "date"]], show_progress)
 
-    # Prepare an empty DataFrame for splits
-    splits = pd.DataFrame(columns=["sid", "ratio", "effective_date"])
-
-    # Prepare an empty DataFrame for metadata
-    metadata = pd.DataFrame(
-        columns=("start_date", "end_date", "auto_close_date", "symbol", "exchange")
+    exchanges = pd.DataFrame(
+        data=[["SIP", "SIP", "US"]],
+        columns=["exchange", "canonical_name", "country_code"],
     )
+    asset_db_writer.write(equities=asset_metadata, exchanges=exchanges)
 
-    # Check valid trading dates, according to the selected exchange calendar
+    symbol_map = asset_metadata.symbol
     sessions = calendar.sessions_in_range(start_session, end_session)
-    # sessions = calendar.sessions_in_range('1995-05-02', '2020-05-27')
 
-    # # Get data for all stocks and write to Zipline
-    # daily_bar_writer.write(process_stocks(symbols, sessions, metadata, divs))
+    raw_data.set_index(["date", "symbol"], inplace=True)
+    daily_bar_writer.write(
+        parse_pricing_and_vol(raw_data, sessions, symbol_map),
+        show_progress=show_progress,
+    )
 
-    # # Write the metadata
-    # asset_db_writer.write(equities=metadata)
-
-    # # Write splits and dividends
-    # adjustment_writer.write(splits=splits, dividends=divs)
+    raw_data.reset_index(inplace=True)
+    raw_data["symbol"] = raw_data["symbol"].astype("category")
+    raw_data["sid"] = raw_data.symbol.cat.codes
+    adjustment_writer.write(
+        splits=parse_splits(
+            raw_data[
+                [
+                    "sid",
+                    "date",
+                    "split_ratio",
+                ]
+            ].loc[raw_data.split_ratio != 1],
+            show_progress=show_progress,
+        ),
+        dividends=parse_dividends(
+            raw_data[
+                [
+                    "sid",
+                    "date",
+                    "ex_dividend",
+                ]
+            ].loc[raw_data.ex_dividend != 0],
+            show_progress=show_progress,
+        ),
+    )
 
 
 def register_polygon_equities_bundle(
     bundlename,
     start_session="2000-01-01",
     end_session="now",
-    calendar_name="NYSE",
-    symbol_list=None,
+    calendar_name="XYNS",
+    ticker_list=None,
     watchlists=None,
-    excluded_symbol_list=None,
+    include_asset_types=None,
 ):
     register(
         bundlename,
@@ -109,3 +119,13 @@ def register_polygon_equities_bundle(
         end_session=end_session,
         calendar_name=calendar_name,
     )
+
+
+if __name__ == "__main__":
+    config = PolygonConfig(
+        environ=os.environ,
+        calendar_name="XNYS",
+        start_session="2022-03-05",
+        end_session="2022-03-10",
+    )
+    print(f"{get_ticker_universe(config)}")

@@ -2,7 +2,7 @@ import os
 import glob
 import pandas as pd
 from concurrent.futures import ProcessPoolExecutor
-from config import get_minute_aggs_dir
+from config import PolygonConfig
 
 
 def convert_timestamp(x):
@@ -96,4 +96,5 @@ def process_all_minute_csv_to_parquet(
 
 
 if __name__ == "__main__":
-    process_all_minute_csv_to_parquet(get_minute_aggs_dir())
+    config = PolygonConfig(environ=os.environ, calendar_name="XNYS", start_session='2022-03-05', end_session='2022-03-10')
+    process_all_minute_csv_to_parquet(config.minute_aggs_dir, max_workers=8)
