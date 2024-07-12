@@ -29,6 +29,10 @@ class PolygonConfig:
         return self.environ.get("POLYGON_ASSET_SUBDIR", "us_stocks_sip")
 
     @property
+    def market(self):
+        return self.environ.get("POLYGON_MARKET", "stocks")
+
+    @property
     def tickers_dir(self):
         return self.environ.get(
             "POLYGON_TICKERS_DIR",

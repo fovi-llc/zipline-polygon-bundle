@@ -7,16 +7,22 @@ import pandas as pd
 import os
 
 
-def get_ticker_universe(config: PolygonConfig):
+def get_ticker_universe(config: PolygonConfig, fetch_missing: bool = False):
     assets = PolygonAssets(config)
     tickers_csv_path = config.tickers_csv_path
     print(f"{tickers_csv_path=}")
-    if not os.path.exists(tickers_csv_path):
-        all_tickers = assets.load_all_tickers(fetch_missing=False)
+    if not os.path.exists(tickers_csv_path) or not os.path.exists(
+        tickers_csv_path.removesuffix(".csv") + ".parquet"
+    ):
+        all_tickers = assets.load_all_tickers(fetch_missing=fetch_missing)
         # all_tickers.to_csv(tickers_csv_path)
         merged_tickers = assets.merge_tickers(all_tickers)
         merged_tickers.to_csv(tickers_csv_path)
         print(f"Saved {len(merged_tickers)} tickers to {tickers_csv_path}")
+        merged_tickers.to_parquet(tickers_csv_path.removesuffix(".csv") + ".parquet")
+        print(
+            f"Saved {len(merged_tickers)} tickers to {tickers_csv_path.removesuffix('.csv') + '.parquet'}"
+        )
     merged_tickers = pd.read_csv(
         tickers_csv_path,
         #  dtype={'ticker': str, 'name': str, 'exchange': str, 'composite_figi': str, 'currency_name': str,
@@ -128,7 +134,9 @@ if __name__ == "__main__":
     config = PolygonConfig(
         environ=os.environ,
         calendar_name="XNYS",
-        start_session="2021-01-01",
-        end_session="2021-10-01",
+        # start_session="2014-01-01",
+        start_session="2024-01-01",
+        end_session="2024-01-11",
+        # end_session="2024-07-01",
     )
-    print(f"{get_ticker_universe(config)}")
+    print(f"{get_ticker_universe(config, fetch_missing=True)}")

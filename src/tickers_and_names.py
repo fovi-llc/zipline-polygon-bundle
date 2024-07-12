@@ -18,7 +18,7 @@ class PolygonAssets:
         active: bool = True,
     ):
         response = self.polygon_client.list_tickers(
-            market="stocks", active=active, date=date.date(), limit=500
+            market=self.config.market, active=active, date=date.date(), limit=500
         )
         tickers_df = pd.DataFrame(list(response))
         tickers_df.drop(
@@ -35,26 +35,26 @@ class PolygonAssets:
         tickers_df["last_updated_utc"] = pd.to_datetime(tickers_df["last_updated_utc"])
         tickers_df["delisted_utc"] = pd.to_datetime(tickers_df["delisted_utc"])
 
-        # Group by 'ticker', 'cik' and get the index of the row with the newest 'last_updated_utc' in each group
-        idx = tickers_df.groupby(["ticker", "cik"])["last_updated_utc"].idxmax()
+        # # Group by 'ticker', 'cik' and get the index of the row with the newest 'last_updated_utc' in each group
+        # idx = tickers_df.groupby(["ticker", "cik"])["last_updated_utc"].idxmax()
 
-        # Use the indices to get the rows with the newest 'last_updated_utc'
-        tickers_df = tickers_df.loc[idx]
+        # # Use the indices to get the rows with the newest 'last_updated_utc'
+        # tickers_df = tickers_df.loc[idx]
 
         tickers_df.set_index(["ticker", "cik", "request_date", "active"], inplace=True)
 
         return tickers_df
 
     def validate_active_tickers(self, tickers: pd.DataFrame):
-        # All tickers are active
-        inactive_tickers = (
-            tickers[~tickers.index.get_level_values("active")]
-            .index.get_level_values("ticker")
-            .tolist()
-        )
-        assert (
-            not inactive_tickers
-        ), f"{len(inactive_tickers)} tickers are not active: {inactive_tickers[:15]}"
+        # # All tickers are active
+        # inactive_tickers = (
+        #     tickers[~tickers.index.get_level_values("active")]
+        #     .index.get_level_values("ticker")
+        #     .tolist()
+        # )
+        # assert (
+        #     not inactive_tickers
+        # ), f"{len(inactive_tickers)} tickers are not active: {inactive_tickers[:15]}"
 
         # No tickers with missing last_updated_utc
         missing_last_updated_utc_tickers = (
@@ -145,27 +145,13 @@ class PolygonAssets:
         # Reset the index of the DataFrame
         all_tickers.reset_index(inplace=True)
 
-        # Sort so that rows where 'active' is False come first.
-        all_tickers.sort_values("active", ascending=False, inplace=True)
-
-        # Drop duplicates based on "ticker", "cik", and "request_date", keeping the first occurrence (active=True)
-        all_tickers.drop_duplicates(
-            subset=["ticker", "cik", "request_date"], keep="first", inplace=True
-        )
-        all_tickers.set_index(["ticker", "cik", "request_date", "active"], inplace=True)
-
-        # Drop rows with active=False
-        active_tickers = all_tickers.drop(index=False, level=3)
-
-        # There should be no rows with delisted_utc values.  Check that is true then drop the column.
-        assert active_tickers["delisted_utc"].isnull().all()
-        active_tickers.drop(columns=["delisted_utc"], inplace=True)
+        all_tickers.set_index(["ticker", "cik", "active", "request_date"], inplace=True)
 
         # We're keeping these tickers with missing type because it is some Polygon bug.
         # # Drop rows with no type.  Not sure why this happens but we'll ignore them for now.
         # active_tickers = active_tickers.dropna(subset=["type"])
 
-        active_tickers = active_tickers.astype(
+        all_tickers = all_tickers.astype(
             {
                 "composite_figi": "string",
                 "currency_name": "string",
@@ -178,11 +164,11 @@ class PolygonAssets:
             }
         )
 
-        active_tickers.sort_index(inplace=True)
+        all_tickers.sort_index(inplace=True)
 
-        self.validate_active_tickers(active_tickers)
+        self.validate_active_tickers(all_tickers)
 
-        return active_tickers
+        return all_tickers
 
     def ticker_file_exists(self, date: pd.Timestamp):
         return os.path.exists(self.config.ticker_file_path(date))
@@ -190,7 +176,7 @@ class PolygonAssets:
     def save_tickers_for_date(self, tickers: pd.DataFrame, date: pd.Timestamp):
         tickers.to_parquet(self.config.ticker_file_path(date))
 
-    def load_tickers_for_date(self, date: pd.Timestamp, fetch_missing=False):
+    def load_tickers_for_date(self, date: pd.Timestamp, fetch_missing: bool = False):
         if not self.ticker_file_exists(date):
             if not fetch_missing:
                 return None
