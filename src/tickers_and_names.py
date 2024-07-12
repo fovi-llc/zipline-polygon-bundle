@@ -45,9 +45,7 @@ class PolygonAssets:
 
         return tickers_df
 
-    def validate_active_tickers(
-        self, tickers: pd.DataFrame, only_one_row_per_ticker=False
-    ):
+    def validate_active_tickers(self, tickers: pd.DataFrame):
         # All tickers are active
         inactive_tickers = (
             tickers[~tickers.index.get_level_values("active")]
@@ -57,16 +55,6 @@ class PolygonAssets:
         assert (
             not inactive_tickers
         ), f"{len(inactive_tickers)} tickers are not active: {inactive_tickers[:15]}"
-
-        if only_one_row_per_ticker:
-            # Only one row per ticker
-            ticker_counts = tickers.index.get_level_values("ticker").value_counts()
-            tickers_with_more_than_one_row = ticker_counts[
-                ticker_counts > 1
-            ].index.tolist()
-            assert (
-                not tickers_with_more_than_one_row
-            ), f"{len(tickers_with_more_than_one_row)} tickers with more than one row: {tickers_with_more_than_one_row[:15]}"
 
         # No tickers with missing last_updated_utc
         missing_last_updated_utc_tickers = (
@@ -146,7 +134,7 @@ class PolygonAssets:
             not missing_currency_tickers
         ), f"{len(missing_currency_tickers)} tickers have missing currency_name: {missing_currency_tickers[:15]}"
 
-    def fetch_all_tickers(self, date: pd.Timestamp, only_one_row_per_ticker=False):
+    def fetch_all_tickers(self, date: pd.Timestamp):
         all_tickers = pd.concat(
             [
                 self.fetch_tickers(date=date, active=True),
@@ -173,30 +161,6 @@ class PolygonAssets:
         assert active_tickers["delisted_utc"].isnull().all()
         active_tickers.drop(columns=["delisted_utc"], inplace=True)
 
-        if only_one_row_per_ticker:
-            # For rows with more than one CIK, call the Polygon Ticker Details API to get the correct CIK.
-            # This is a bug in the Polygon Tickers API.
-            ticker_counts = active_tickers.index.get_level_values(
-                "ticker"
-            ).value_counts()
-            tickers_with_more_than_one_row = ticker_counts[
-                ticker_counts > 1
-            ].index.tolist()
-            if tickers_with_more_than_one_row:
-                logging.warning(
-                    f"{len(tickers_with_more_than_one_row)} tickers have more than one CIK: {sorted(tickers_with_more_than_one_row)}"
-                )
-                for ticker in tickers_with_more_than_one_row:
-                    response = self.polygon_client.get_ticker_details(
-                        ticker=ticker, date=date
-                    )
-                    # Create a boolean mask for rows with this ticker but a different CIK
-                    mask = (
-                        active_tickers.index.get_level_values("ticker") == ticker
-                    ) & (active_tickers.index.get_level_values("cik") != response.cik)
-                    # Drop these rows
-                    active_tickers = active_tickers[~mask]
-
         # We're keeping these tickers with missing type because it is some Polygon bug.
         # # Drop rows with no type.  Not sure why this happens but we'll ignore them for now.
         # active_tickers = active_tickers.dropna(subset=["type"])
@@ -216,9 +180,7 @@ class PolygonAssets:
 
         active_tickers.sort_index(inplace=True)
 
-        self.validate_active_tickers(
-            active_tickers, only_one_row_per_ticker=only_one_row_per_ticker
-        )
+        self.validate_active_tickers(active_tickers)
 
         return active_tickers
 
@@ -236,12 +198,12 @@ class PolygonAssets:
             self.save_tickers_for_date(all_tickers, date)
             return all_tickers
         try:
-            return pd.read_parquet(self.ticker_file_path(date))
+            return pd.read_parquet(self.config.ticker_file_path(date))
         except (FileNotFoundError, IOError) as e:
             logging.error(f"Error loading tickers for {date}: {e}")
             try:
                 # Remove the file so that it can be fetched again
-                os.remove(self.ticker_file_path(date))
+                os.remove(self.config.ticker_file_path(date))
             except (FileNotFoundError, IOError) as e2:
                 logging.error(
                     f"Error removing file {self.ticker_file_path(date)}: {e2}"
@@ -258,10 +220,13 @@ class PolygonAssets:
             [
                 self.load_tickers_for_date(date, fetch_missing=fetch_missing)
                 for date in self.config.calendar.trading_index(
-                    start=self.config.start_timestamp, end=self.config.end_timestamp, period="1D"
+                    start=self.config.start_timestamp,
+                    end=self.config.end_timestamp,
+                    period="1D",
                 )
             ]
         )
+        all_tickers.info()
         return all_tickers
 
     def merge_tickers(self, all_tickers: pd.DataFrame):
@@ -273,19 +238,21 @@ class PolygonAssets:
         # Drops rows with missing primary exchange (rare but means it isn't actually active).
         all_tickers.dropna(subset=["name", "primary_exchange"], inplace=True)
 
+        # # Only keep rows with type CS, ETF, or ADRC
+        # all_tickers = all_tickers[all_tickers["type"].isin(["CS", "ETF", "ADRC"])]
+
         merged_tickers = (
-            all_tickers.sort_values("last_updated_utc")
-            .groupby(["ticker", "cik", "name"])
+            all_tickers.sort_values(by="request_date")
+            .groupby(["ticker", "cik", "type", "share_class_figi"], dropna=False)
             .agg(
                 {
                     "request_date": ["min", "max"],
-                    "composite_figi": "last",
-                    "currency_name": "last",
-                    "locale": "last",
-                    "market": "last",
-                    "primary_exchange": "last",
-                    "share_class_figi": "last",
-                    "type": "last",
+                    "name": "unique",
+                    "composite_figi": "unique",
+                    "primary_exchange": "unique",
+                    "currency_name": "unique",
+                    "locale": "unique",
+                    "market": "unique",
                 }
             )
             .sort_values(by=("request_date", "max"), ascending=False)
@@ -293,8 +260,7 @@ class PolygonAssets:
 
         # Flatten the multi-level column index
         merged_tickers.columns = [
-            ("_".join(col[:-1] if col[-1] == "last" else col).strip())
-            for col in merged_tickers.columns.values
+            "_".join(col).strip() for col in merged_tickers.columns.values
         ]
 
         # Rename the columns
@@ -302,22 +268,12 @@ class PolygonAssets:
             columns={"request_date_min": "start_date", "request_date_max": "end_date"},
             inplace=True,
         )
-
-        # Reset the index
-        merged_tickers.reset_index(inplace=True)
-        merged_tickers.set_index(["ticker", "start_date", "cik", "name"], inplace=True)
-        merged_tickers.sort_index(inplace=True)
+        merged_tickers.rename(
+            columns=lambda x: x.removesuffix("_unique"),
+            inplace=True,
+        )
 
         return merged_tickers
-
-    def ticker_names_from_merged_tickers(self, merged_tickers: pd.DataFrame):
-        ticker_names = merged_tickers.sort_index().reset_index()[
-            ["ticker", "name", "start_date"]
-        ]
-        ticker_names.drop_duplicates(
-            subset=["ticker", "name"], keep="last", inplace=True
-        )
-        return ticker_names
 
 
 # Initialize ticker files in __main__.  Use CLI args to specify start and end dates.
