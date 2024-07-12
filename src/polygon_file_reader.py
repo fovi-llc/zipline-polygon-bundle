@@ -80,7 +80,7 @@ def process_all_minute_csv_to_parquet(
         ]
         if len(paths) < csv_file_count:
             print(f"Skipping {csv_file_count - len(paths)} already converted files.")
-    if max_workers == 1:
+    if max_workers == 0:
         for path in paths:
             convert_minute_csv_to_parquet(
                 path, extension=extension, compression=compression
@@ -96,5 +96,5 @@ def process_all_minute_csv_to_parquet(
 
 
 if __name__ == "__main__":
-    config = PolygonConfig(environ=os.environ, calendar_name="XNYS", start_session='2022-03-05', end_session='2022-03-10')
-    process_all_minute_csv_to_parquet(config.minute_aggs_dir, max_workers=8)
+    config = PolygonConfig(environ=os.environ, calendar_name="XNYS", start_session=None, end_session=None)
+    process_all_minute_csv_to_parquet(config.minute_aggs_dir)

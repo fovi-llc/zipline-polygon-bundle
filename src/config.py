@@ -11,10 +11,10 @@ class PolygonConfig:
         self.calendar = get_calendar(calendar_name)
         self.start_timestamp = parse_date(
             start_session, calendar=self.calendar, raise_oob=False
-        )
+        ) if start_session else self.calendar.first_session
         self.end_timestamp = parse_date(
             end_session, calendar=self.calendar, raise_oob=False
-        )
+        ) if end_session else self.calendar.last_session
 
     @property
     def api_key(self):
@@ -38,7 +38,7 @@ class PolygonConfig:
     def ticker_file_path(self, date: pd.Timestamp):
         ticker_year_dir = os.path.join(self.tickers_dir, f"tickers_{date.strftime('%Y')}")
         os.makedirs(ticker_year_dir, exist_ok=True)
-        return os.path.join(ticker_year_dir, f"tickers_{date.isoformat()}.parquet")
+        return os.path.join(ticker_year_dir, f"tickers_{date.date().isoformat()}.parquet")
 
     @property
     def tickers_csv_path(self):
