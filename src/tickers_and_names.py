@@ -8,15 +8,24 @@ import logging
 from concurrent.futures import ProcessPoolExecutor
 
 
+def configure_logging():
+    logging.basicConfig(
+        level=logging.WARNING,
+        format='%(asctime)s %(processName)s %(levelname)s %(message)s',
+        handlers=[logging.StreamHandler()]
+    )
+
+
 def fetch_and_save_tickers_for_date(config: PolygonConfig, date: pd.Timestamp):
-    logging.info("fetch_and_save_tickers_for_date")
     try:
-        logging.info(f"Fetching tickers for {date}")
+        configure_logging()
+        logger = logging.getLogger()
+        logger.info(f"Fetching tickers for {date}")
         assets = PolygonAssets(config)
         all_tickers = assets.fetch_all_tickers(date=date)
         assets.save_tickers_for_date(all_tickers, date)
     except Exception as e:
-        logging.error(f"Error fetching tickers for {date}: {e}")
+        logger.error(f"Error fetching tickers for {date}: {e}")
 
 
 class PolygonAssets:
@@ -74,14 +83,14 @@ class PolygonAssets:
             not missing_last_updated_utc_tickers
         ), f"{len(missing_last_updated_utc_tickers)} tickers have missing last_updated_utc: {missing_last_updated_utc_tickers[:15]}"
 
-        # No tickers with missing name
-        missing_name_tickers = (
-            tickers[tickers["name"].isnull()].index.get_level_values("ticker").tolist()
-        )
-        if missing_name_tickers:
-            logging.warning(
-                f"{len(missing_name_tickers)} tickers have missing name: {missing_name_tickers[:15]}"
-            )
+        # # No tickers with missing name
+        # missing_name_tickers = (
+        #     tickers[tickers["name"].isnull()].index.get_level_values("ticker").tolist()
+        # )
+        # if missing_name_tickers:
+        #     logging.warning(
+        #         f"{len(missing_name_tickers)} tickers have missing name: {missing_name_tickers[:15]}"
+        #     )
         # assert (
         #     not missing_name_tickers
         # ), f"{len(missing_name_tickers)} tickers have missing name: {missing_name_tickers[:15]}"
@@ -106,31 +115,31 @@ class PolygonAssets:
             not missing_market_tickers
         ), f"{len(missing_market_tickers)} tickers have missing market: {missing_market_tickers[:15]}"
 
-        # No tickers with missing primary exchange
-        missing_primary_exchange_tickers = (
-            tickers[tickers["primary_exchange"].isnull()]
-            .index.get_level_values("ticker")
-            .tolist()
-        )
-        # We'll just warn here and filter in the merge_tickers function.
-        if missing_primary_exchange_tickers:
-            logging.warning(
-                f"{len(missing_primary_exchange_tickers)} tickers have missing primary exchange: {missing_primary_exchange_tickers[:15]}"
-            )
+        # # No tickers with missing primary exchange
+        # missing_primary_exchange_tickers = (
+        #     tickers[tickers["primary_exchange"].isnull()]
+        #     .index.get_level_values("ticker")
+        #     .tolist()
+        # )
+        # # We'll just warn here and filter in the merge_tickers function.
+        # if missing_primary_exchange_tickers:
+        #     logging.warning(
+        #         f"{len(missing_primary_exchange_tickers)} tickers have missing primary exchange: {missing_primary_exchange_tickers[:15]}"
+        #     )
         # assert (
         #     not missing_primary_exchange_tickers
         # ), f"{len(missing_primary_exchange_tickers)} tickers have missing primary exchange: {missing_primary_exchange_tickers[:15]}"
 
-        # No tickers with missing type
-        missing_type_tickers = (
-            tickers[tickers["type"].isnull()].index.get_level_values("ticker").tolist()
-        )
-        # assert not missing_type_tickers, f"{len(missing_type_tickers)} tickers have missing type: {missing_type_tickers[:15]}"
-        # Just a warning because there are legit tickers with missing type
-        if missing_type_tickers:
-            logging.warning(
-                f"{len(missing_type_tickers)} tickers have missing type: {missing_type_tickers[:15]}"
-            )
+        # # No tickers with missing type
+        # missing_type_tickers = (
+        #     tickers[tickers["type"].isnull()].index.get_level_values("ticker").tolist()
+        # )
+        # # assert not missing_type_tickers, f"{len(missing_type_tickers)} tickers have missing type: {missing_type_tickers[:15]}"
+        # # Just a warning because there are legit tickers with missing type
+        # if missing_type_tickers:
+        #     logging.warning(
+        #         f"{len(missing_type_tickers)} tickers have missing type: {missing_type_tickers[:15]}"
+        #     )
 
         # No tickers with missing currency
         missing_currency_tickers = (
@@ -231,7 +240,6 @@ class PolygonAssets:
         all_tickers = pd.concat(
             [self.load_tickers_for_date(date) for date in dates_with_files]
         )
-        all_tickers.info()
         return all_tickers
 
     def merge_tickers(self, all_tickers: pd.DataFrame):

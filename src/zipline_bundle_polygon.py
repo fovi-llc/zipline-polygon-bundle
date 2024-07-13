@@ -5,6 +5,7 @@ from tickers_and_names import PolygonAssets
 
 import pandas as pd
 import os
+import logging
 
 
 def get_ticker_universe(config: PolygonConfig, fetch_missing: bool = False):
@@ -15,7 +16,9 @@ def get_ticker_universe(config: PolygonConfig, fetch_missing: bool = False):
         tickers_csv_path.removesuffix(".csv") + ".parquet"
     ):
         all_tickers = assets.load_all_tickers(fetch_missing=fetch_missing)
+        all_tickers.info()
         # all_tickers.to_csv(tickers_csv_path)
+        logging.info("Merging tickers")
         merged_tickers = assets.merge_tickers(all_tickers)
         merged_tickers.to_csv(tickers_csv_path)
         print(f"Saved {len(merged_tickers)} tickers to {tickers_csv_path}")
@@ -131,11 +134,12 @@ def register_polygon_equities_bundle(
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.WARNING)
     config = PolygonConfig(
         environ=os.environ,
         calendar_name="XNYS",
         start_session="2014-01-01",
-        end_session="2024-07-01",
+        end_session="2024-07-12",
         # start_session="2023-01-01",
         # end_session="2023-01-15",
     )
