@@ -11,8 +11,8 @@ from concurrent.futures import ProcessPoolExecutor
 def configure_logging():
     logging.basicConfig(
         level=logging.WARNING,
-        format='%(asctime)s %(processName)s %(levelname)s %(message)s',
-        handlers=[logging.StreamHandler()]
+        format="%(asctime)s %(processName)s %(levelname)s %(message)s",
+        handlers=[logging.StreamHandler()],
     )
 
 
@@ -25,7 +25,7 @@ def fetch_and_save_tickers_for_date(config: PolygonConfig, date: pd.Timestamp):
         all_tickers = assets.fetch_all_tickers(date=date)
         assets.save_tickers_for_date(all_tickers, date)
     except Exception as e:
-        logger.error(f"Error fetching tickers for {date}: {e}")
+        logger.exception(f"Error fetching tickers for {date}: {e}")
 
 
 class PolygonAssets:
@@ -42,6 +42,8 @@ class PolygonAssets:
             market=self.config.market, active=active, date=date.date(), limit=500
         )
         tickers_df = pd.DataFrame(list(response))
+        tickers_df.reset_index(inplace=True)
+        # This currency info is for crypto.  The source_feed is always NA.
         tickers_df.drop(
             columns=[
                 "currency_symbol",
@@ -53,12 +55,14 @@ class PolygonAssets:
         )
 
         # Test tickers have no CIK value.
-        tickers_df = tickers_df.dropna(subset=["ticker", "cik"])
+        # Actually sometimes listed tickers have no CIK value.
+        # Case in point is ALTL ETF which doesn't include a CIK in the Ticker search response for 2024-07-01
+        # but did on 2024-06-25.  Suspiciouly 4 years after the listing date of 2020-06-25.
+        # We'll have to leave this cleaning of test tickers until we can call Ticker Details.
+        # tickers_df = tickers_df.dropna(subset=["ticker", "cik"])
         tickers_df["request_date"] = date
         tickers_df["last_updated_utc"] = pd.to_datetime(tickers_df["last_updated_utc"])
         tickers_df["delisted_utc"] = pd.to_datetime(tickers_df["delisted_utc"])
-
-        tickers_df.set_index(["ticker", "cik", "request_date", "active"], inplace=True)
 
         return tickers_df
 
@@ -149,20 +153,18 @@ class PolygonAssets:
             ]
         )
 
-        # Reset the index of the DataFrame
-        all_tickers.reset_index(inplace=True)
-
         # Make sure nobody infers the wrong type such a float for "NAN".
         all_tickers = all_tickers.astype(
             {
                 "composite_figi": "string",
-                "currency_name": "string",
                 "locale": "string",
                 "market": "string",
                 "name": "string",
                 "primary_exchange": "string",
                 "share_class_figi": "string",
                 "type": "string",
+                "currency_name": "string",
+                "source_feed": "string",
             }
         )
 
@@ -170,16 +172,15 @@ class PolygonAssets:
         for col in all_tickers.columns:
             if all_tickers[col].dtype == "string":
                 # Still gotta check value types because of NA values.
-                all_tickers[col] = all_tickers[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
+                all_tickers[col] = all_tickers[col].apply(
+                    lambda x: x.strip() if isinstance(x, str) else x
+                )
 
         # We're keeping these tickers with missing type because it is some Polygon bug.
         # # Drop rows with no type.  Not sure why this happens but we'll ignore them for now.
         # active_tickers = active_tickers.dropna(subset=["type"])
 
         self.validate_active_tickers(all_tickers)
-
-        all_tickers.set_index(["ticker", "primary_exchange", "cik", "type", "active", "request_date"], inplace=True)
-        all_tickers.sort_index(inplace=True)
 
         return all_tickers
 
@@ -191,7 +192,9 @@ class PolygonAssets:
 
     def load_tickers_for_date(self, date: pd.Timestamp):
         try:
-            return pd.read_parquet(self.config.ticker_file_path(date))
+            tickers = pd.read_parquet(self.config.ticker_file_path(date))
+            tickers.reset_index(drop=True, inplace=True)
+            return tickers
         except (FileNotFoundError, IOError) as e:
             logging.error(f"Error loading tickers for {date}: {e}")
             try:
@@ -217,6 +220,9 @@ class PolygonAssets:
             ]
             print(f"{len(missing_dates)=}")
             if missing_dates:
+                max_workers = (
+                    max_workers if max_workers is not None else self.config.max_workers
+                )
                 if max_workers == 0:
                     for date in missing_dates:
                         fetch_and_save_tickers_for_date(self.config, date)
@@ -239,22 +245,27 @@ class PolygonAssets:
         return all_tickers
 
     def merge_tickers(self, all_tickers: pd.DataFrame):
-        all_tickers.reset_index(inplace=True)
+        all_tickers.set_index(
+            ["ticker", "primary_exchange", "cik", "type", "active", "request_date"],
+            drop=False,
+            inplace=True,
+        )
+        all_tickers.sort_index(inplace=True)
 
         # Make sure there are no leading or trailing spaces in the column values
         # This also does some kind of change to the type for the StringArray values which makes Arrow Parquet happy.
         all_tickers = all_tickers.map(lambda x: x.strip() if isinstance(x, str) else x)
 
-        # Drops rows with missing primary exchange (rare but means it isn't actually active).
-        all_tickers.dropna(subset=["name", "primary_exchange"], inplace=True)
+        # # Drops rows with missing primary exchange (rare but means it isn't actually active).
+        # all_tickers.dropna(subset=["name", "primary_exchange"], inplace=True)
 
         # # Only keep rows with type CS, ETF, or ADRC
         # all_tickers = all_tickers[all_tickers["type"].isin(["CS", "ETF", "ADRC"])]
 
         merged_tickers = (
-            all_tickers.sort_values(by="request_date")
-            .groupby(
-                ["ticker", "primary_exchange", "cik", "type", "share_class_figi", "active"], dropna=False
+            all_tickers.groupby(
+                level=["ticker", "primary_exchange", "cik", "type", "active"],
+                dropna=False,
             )
             .agg(
                 {
@@ -266,7 +277,7 @@ class PolygonAssets:
                     "market": "unique",
                 }
             )
-            .sort_values(by=("request_date", "max"), ascending=False)
+            .sort_values(by=("request_date", "max"))
         )
 
         # Flatten the multi-level column index
@@ -284,6 +295,7 @@ class PolygonAssets:
             inplace=True,
         )
 
+        all_tickers.sort_index(inplace=True)
         return merged_tickers
 
 

@@ -14,6 +14,9 @@ class PolygonConfig:
         self.end_timestamp = parse_date(
             end_session, calendar=self.calendar, raise_oob=False
         ) if end_session else self.calendar.last_session
+        self.max_workers = None
+        if environ.get("POLYGON_MAX_WORKERS", "").strip() != "":
+            self.max_workers = int(environ.get("POLYGON_MAX_WORKERS"))
         self.api_key = environ.get("POLYGON_API_KEY")
         self.data_dir = environ.get("POLYGON_DATA_DIR", "data/polygon")
         self.asset_subdir = environ.get("POLYGON_ASSET_SUBDIR", "us_stocks_sip")

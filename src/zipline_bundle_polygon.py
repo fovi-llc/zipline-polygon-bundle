@@ -29,22 +29,27 @@ def get_ticker_universe(config: PolygonConfig, fetch_missing: bool = False):
         )
     merged_tickers = pd.read_csv(
         tickers_csv_path,
-        #  dtype={'ticker': str, 'name': str, 'exchange': str, 'composite_figi': str, 'currency_name': str,
-        #         'locale': str, 'market': str, 'primary_exchange':str, 'share_class_figi': str, 'type': str},
-        converters={
-            "ticker": lambda x: str(x).strip(),
-            "start_date": lambda x: pd.to_datetime(x),
-            "cik": lambda x: int(x),
-            "name": lambda x: str(x).strip(),
-            "end_date": lambda x: pd.to_datetime(x),
-            "composite_figi": lambda x: str(x).strip().upper(),
-            "share_class_figi": lambda x: str(x).strip().upper(),
-            "currency_name": lambda x: str(x).strip().lower(),
-            "locale": lambda x: str(x).strip().lower(),
-            "market": lambda x: str(x).strip().lower(),
-            "primary_exchange": lambda x: str(x).strip().upper(),
-            "type": lambda x: str(x).strip().upper(),
+        dtype={
+            "ticker": str,
+            "primary_exchange": str,
+            "cik": str,
+            "type": str,
+            "share_class_figi": str,
         },
+        # converters={
+        #     "ticker": lambda x: str(x),
+        #     "start_date": lambda x: pd.to_datetime(x),
+        #     "cik": lambda x: str(x) if x else None,
+        #     "name": lambda x: str(x),
+        #     "end_date": lambda x: pd.to_datetime(x),
+        #     "composite_figi": lambda x: str(x).upper(),
+        #     "share_class_figi": lambda x: str(x).upper(),
+        #     "currency_name": lambda x: str(x).lower(),
+        #     "locale": lambda x: str(x).lower(),
+        #     "market": lambda x: str(x).lower(),
+        #     "primary_exchange": lambda x: str(x).strip().upper(),
+        #     "type": lambda x: str(x).upper(),
+        # },
     )
     merged_tickers.info()
     return merged_tickers
@@ -139,9 +144,11 @@ if __name__ == "__main__":
     config = PolygonConfig(
         environ=os.environ,
         calendar_name="XNYS",
-        start_session="2010-01-01",
-        end_session="2024-07-12",
-        start_session="2023-01-01",
-        end_session="2023-01-15",
+        start_session="2020-01-01",
+        # end_session="2023-01-01",
+        # start_session="2003-10-01",
+        # end_session="2024-07-12",
+        # start_session="2023-01-01",
+        end_session="2023-12-31",
     )
     print(f"{get_ticker_universe(config, fetch_missing=True)}")
