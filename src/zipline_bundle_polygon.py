@@ -134,9 +134,9 @@ if __name__ == "__main__":
     config = PolygonConfig(
         environ=os.environ,
         calendar_name="XNYS",
-        # start_session="2014-01-01",
-        start_session="2024-01-01",
-        end_session="2024-01-11",
-        # end_session="2024-07-01",
+        start_session="2014-01-01",
+        end_session="2024-07-01",
+        # start_session="2023-01-01",
+        # end_session="2023-01-15",
     )
     print(f"{get_ticker_universe(config, fetch_missing=True)}")

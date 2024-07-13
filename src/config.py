@@ -7,14 +7,32 @@ import pandas as pd
 
 class PolygonConfig:
     def __init__(self, environ, calendar_name, start_session: Date, end_session: Date):
-        self.environ = environ
-        self.calendar = get_calendar(calendar_name)
+        self.environ = dict(environ)
+        self.calendar_name = calendar_name
         self.start_timestamp = parse_date(
             start_session, calendar=self.calendar, raise_oob=False
         ) if start_session else self.calendar.first_session
         self.end_timestamp = parse_date(
             end_session, calendar=self.calendar, raise_oob=False
         ) if end_session else self.calendar.last_session
+
+    # def __getstate__(self):
+    #     print("I'm being pickled")
+    #     # Return the object's state, omitting the unpicklable 'calendar' attribute
+    #     state = self.__dict__.copy()
+    #     del state['calendar']  # Remove the unpicklable part
+    #     return state
+
+    # def __setstate__(self, state):
+    #     print("I'm being unpickled")
+    #     # Restore instance attributes (i.e., calendar)
+    #     self.__dict__.update(state)
+    #     # Recreate the calendar object since it was not pickled
+    #     self.calendar = get_calendar(self.calendar_name)
+
+    @property
+    def calendar(self):
+        return get_calendar(self.calendar_name)
 
     @property
     def api_key(self):

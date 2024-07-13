@@ -5,6 +5,18 @@ import os
 import pandas as pd
 import polygon
 import logging
+from concurrent.futures import ProcessPoolExecutor
+
+
+def fetch_and_save_tickers_for_date(config: PolygonConfig, date: pd.Timestamp):
+    logging.info("fetch_and_save_tickers_for_date")
+    try:
+        logging.info(f"Fetching tickers for {date}")
+        assets = PolygonAssets(config)
+        all_tickers = assets.fetch_all_tickers(date=date)
+        assets.save_tickers_for_date(all_tickers, date)
+    except Exception as e:
+        logging.error(f"Error fetching tickers for {date}: {e}")
 
 
 class PolygonAssets:
@@ -30,16 +42,12 @@ class PolygonAssets:
             ],
             inplace=True,
         )
+
+        # Test tickers have no CIK value.
         tickers_df = tickers_df.dropna(subset=["ticker", "cik"])
         tickers_df["request_date"] = date
         tickers_df["last_updated_utc"] = pd.to_datetime(tickers_df["last_updated_utc"])
         tickers_df["delisted_utc"] = pd.to_datetime(tickers_df["delisted_utc"])
-
-        # # Group by 'ticker', 'cik' and get the index of the row with the newest 'last_updated_utc' in each group
-        # idx = tickers_df.groupby(["ticker", "cik"])["last_updated_utc"].idxmax()
-
-        # # Use the indices to get the rows with the newest 'last_updated_utc'
-        # tickers_df = tickers_df.loc[idx]
 
         tickers_df.set_index(["ticker", "cik", "request_date", "active"], inplace=True)
 
@@ -176,13 +184,7 @@ class PolygonAssets:
     def save_tickers_for_date(self, tickers: pd.DataFrame, date: pd.Timestamp):
         tickers.to_parquet(self.config.ticker_file_path(date))
 
-    def load_tickers_for_date(self, date: pd.Timestamp, fetch_missing: bool = False):
-        if not self.ticker_file_exists(date):
-            if not fetch_missing:
-                return None
-            all_tickers = self.fetch_all_tickers(date=date)
-            self.save_tickers_for_date(all_tickers, date)
-            return all_tickers
+    def load_tickers_for_date(self, date: pd.Timestamp):
         try:
             return pd.read_parquet(self.config.ticker_file_path(date))
         except (FileNotFoundError, IOError) as e:
@@ -192,25 +194,42 @@ class PolygonAssets:
                 os.remove(self.config.ticker_file_path(date))
             except (FileNotFoundError, IOError) as e2:
                 logging.error(
-                    f"Error removing file {self.ticker_file_path(date)}: {e2}"
+                    f"Error removing file {self.config.ticker_file_path(date)}: {e2}"
                 )
-            if fetch_missing:
-                logging.info(f"Fetching tickers for {date} again.")
-                all_tickers = self.fetch_all_tickers(date=date)
-                self.save_tickers_for_date(all_tickers, date)
-                return all_tickers
             return None
 
-    def load_all_tickers(self, fetch_missing=False):
-        all_tickers = pd.concat(
-            [
-                self.load_tickers_for_date(date, fetch_missing=fetch_missing)
-                for date in self.config.calendar.trading_index(
-                    start=self.config.start_timestamp,
-                    end=self.config.end_timestamp,
-                    period="1D",
-                )
+    def load_all_tickers(self, fetch_missing=False, max_workers=None):
+        dates = list(
+            self.config.calendar.trading_index(
+                start=self.config.start_timestamp,
+                end=self.config.end_timestamp,
+                period="1D",
+            )
+        )
+        if fetch_missing:
+            missing_dates = [
+                date for date in dates if not self.ticker_file_exists(date)
             ]
+            print(f"{len(missing_dates)=}")
+            if missing_dates:
+                if max_workers == 0:
+                    for date in missing_dates:
+                        fetch_and_save_tickers_for_date(self.config, date)
+                else:
+                    print("Starting process pool executor")
+                    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                        executor.map(
+                            fetch_and_save_tickers_for_date,
+                            [self.config] * len(missing_dates),
+                            missing_dates,
+                        )
+        dates_with_files = [date for date in dates if self.ticker_file_exists(date)]
+        if fetch_missing and (len(dates_with_files) != len(dates)):
+            logging.warning(
+                f"Only {len(dates_with_files)} of {len(dates)} dates have files."
+            )
+        all_tickers = pd.concat(
+            [self.load_tickers_for_date(date) for date in dates_with_files]
         )
         all_tickers.info()
         return all_tickers
@@ -229,7 +248,9 @@ class PolygonAssets:
 
         merged_tickers = (
             all_tickers.sort_values(by="request_date")
-            .groupby(["ticker", "cik", "type", "share_class_figi"], dropna=False)
+            .groupby(
+                ["ticker", "cik", "type", "share_class_figi", "active"], dropna=False
+            )
             .agg(
                 {
                     "request_date": ["min", "max"],
