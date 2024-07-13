@@ -20,6 +20,7 @@ def get_ticker_universe(config: PolygonConfig, fetch_missing: bool = False):
         # all_tickers.to_csv(tickers_csv_path)
         logging.info("Merging tickers")
         merged_tickers = assets.merge_tickers(all_tickers)
+        merged_tickers.info()
         merged_tickers.to_csv(tickers_csv_path)
         print(f"Saved {len(merged_tickers)} tickers to {tickers_csv_path}")
         merged_tickers.to_parquet(tickers_csv_path.removesuffix(".csv") + ".parquet")
@@ -138,9 +139,9 @@ if __name__ == "__main__":
     config = PolygonConfig(
         environ=os.environ,
         calendar_name="XNYS",
-        start_session="2014-01-01",
+        start_session="2010-01-01",
         end_session="2024-07-12",
-        # start_session="2023-01-01",
-        # end_session="2023-01-15",
+        start_session="2023-01-01",
+        end_session="2023-01-15",
     )
     print(f"{get_ticker_universe(config, fetch_missing=True)}")

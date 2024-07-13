@@ -65,9 +65,7 @@ class PolygonAssets:
     def validate_active_tickers(self, tickers: pd.DataFrame):
         # # All tickers are active
         # inactive_tickers = (
-        #     tickers[~tickers.index.get_level_values("active")]
-        #     .index.get_level_values("ticker")
-        #     .tolist()
+        #     tickers[~tickers.index.get_level_values("active")]["ticker"].unique().tolist()
         # )
         # assert (
         #     not inactive_tickers
@@ -75,9 +73,7 @@ class PolygonAssets:
 
         # No tickers with missing last_updated_utc
         missing_last_updated_utc_tickers = (
-            tickers[tickers["last_updated_utc"].isnull()]
-            .index.get_level_values("ticker")
-            .tolist()
+            tickers[tickers["last_updated_utc"].isnull()]["ticker"].unique().tolist()
         )
         assert (
             not missing_last_updated_utc_tickers
@@ -85,7 +81,7 @@ class PolygonAssets:
 
         # # No tickers with missing name
         # missing_name_tickers = (
-        #     tickers[tickers["name"].isnull()].index.get_level_values("ticker").tolist()
+        #     tickers[tickers["name"].isnull()]["ticker"].unique().tolist()
         # )
         # if missing_name_tickers:
         #     logging.warning(
@@ -97,9 +93,7 @@ class PolygonAssets:
 
         # No tickers with missing locale
         missing_locale_tickers = (
-            tickers[tickers["locale"].isnull()]
-            .index.get_level_values("ticker")
-            .tolist()
+            tickers[tickers["locale"].isnull()]["ticker"].unique().tolist()
         )
         assert (
             not missing_locale_tickers
@@ -107,9 +101,7 @@ class PolygonAssets:
 
         # No tickers with missing market
         missing_market_tickers = (
-            tickers[tickers["market"].isnull()]
-            .index.get_level_values("ticker")
-            .tolist()
+            tickers[tickers["market"].isnull()]["ticker"].unique().tolist()
         )
         assert (
             not missing_market_tickers
@@ -143,9 +135,7 @@ class PolygonAssets:
 
         # No tickers with missing currency
         missing_currency_tickers = (
-            tickers[tickers["currency_name"].isnull()]
-            .index.get_level_values("ticker")
-            .tolist()
+            tickers[tickers["currency_name"].isnull()]["ticker"].unique().tolist()
         )
         assert (
             not missing_currency_tickers
@@ -162,12 +152,7 @@ class PolygonAssets:
         # Reset the index of the DataFrame
         all_tickers.reset_index(inplace=True)
 
-        all_tickers.set_index(["ticker", "cik", "active", "request_date"], inplace=True)
-
-        # We're keeping these tickers with missing type because it is some Polygon bug.
-        # # Drop rows with no type.  Not sure why this happens but we'll ignore them for now.
-        # active_tickers = active_tickers.dropna(subset=["type"])
-
+        # Make sure nobody infers the wrong type such a float for "NAN".
         all_tickers = all_tickers.astype(
             {
                 "composite_figi": "string",
@@ -181,9 +166,20 @@ class PolygonAssets:
             }
         )
 
-        all_tickers.sort_index(inplace=True)
+        # Make sure there are no leading or trailing spaces in the column values
+        for col in all_tickers.columns:
+            if all_tickers[col].dtype == "string":
+                # Still gotta check value types because of NA values.
+                all_tickers[col] = all_tickers[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
+
+        # We're keeping these tickers with missing type because it is some Polygon bug.
+        # # Drop rows with no type.  Not sure why this happens but we'll ignore them for now.
+        # active_tickers = active_tickers.dropna(subset=["type"])
 
         self.validate_active_tickers(all_tickers)
+
+        all_tickers.set_index(["ticker", "primary_exchange", "cik", "type", "active", "request_date"], inplace=True)
+        all_tickers.sort_index(inplace=True)
 
         return all_tickers
 
@@ -246,6 +242,7 @@ class PolygonAssets:
         all_tickers.reset_index(inplace=True)
 
         # Make sure there are no leading or trailing spaces in the column values
+        # This also does some kind of change to the type for the StringArray values which makes Arrow Parquet happy.
         all_tickers = all_tickers.map(lambda x: x.strip() if isinstance(x, str) else x)
 
         # Drops rows with missing primary exchange (rare but means it isn't actually active).
@@ -257,14 +254,13 @@ class PolygonAssets:
         merged_tickers = (
             all_tickers.sort_values(by="request_date")
             .groupby(
-                ["ticker", "cik", "type", "share_class_figi", "active"], dropna=False
+                ["ticker", "primary_exchange", "cik", "type", "share_class_figi", "active"], dropna=False
             )
             .agg(
                 {
                     "request_date": ["min", "max"],
                     "name": "unique",
                     "composite_figi": "unique",
-                    "primary_exchange": "unique",
                     "currency_name": "unique",
                     "locale": "unique",
                     "market": "unique",
