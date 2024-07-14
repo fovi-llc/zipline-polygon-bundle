@@ -28,12 +28,12 @@ def fetch_and_save_tickers_for_date(config: PolygonConfig, date: pd.Timestamp):
         logger.exception(f"Error fetching tickers for {date}: {e}")
 
 
-def to_simple_list(x):
-    return [str(y) for y in x if pd.notnull(y)]
+def unique_simple_list(x):
+    return [str(y) for y in x.unique() if pd.notnull(y)]
 
 
-def to_simple_date_list(x):
-    return [y.date().isoformat() for y in x if pd.notnull(y)]
+def unique_simple_date_list(x):
+    return [y.date().isoformat() for y in x.unique() if pd.notnull(y)]
 
 
 class PolygonAssets:
@@ -269,10 +269,10 @@ class PolygonAssets:
             .agg(
                 {
                     "request_date": ["min", "max"],
-                    "last_updated_utc": "max",
+                    "last_updated_utc": lambda x: x.max().date(),
                     "name": "unique",
-                    "share_class_figi": "unique",
-                    "delisted_utc": "unique",
+                    "share_class_figi": unique_simple_list,
+                    "delisted_utc": unique_simple_date_list,
                     "currency_name": "unique",
                     "locale": "unique",
                     "market": "unique",
@@ -291,19 +291,15 @@ class PolygonAssets:
             columns={
                 "request_date_min": "start_date",
                 "request_date_max": "end_date",
-                "last_updated_utc_max": "last_updated_utc",
+                "last_updated_utc_<lambda>": "last_updated_utc",
+                "share_class_figi_unique_simple_list": "share_class_figi",
+                "delisted_utc_unique_simple_date_list": "delisted_utc",
             },
             inplace=True,
         )
         merged_tickers.rename(
             columns=lambda x: x.removesuffix("_unique"),
             inplace=True,
-        )
-        merged_tickers["share_class_figi"] = merged_tickers["share_class_figi"].apply(
-            to_simple_list
-        )
-        merged_tickers["delisted_utc"] = merged_tickers["delisted_utc"].apply(
-            to_simple_date_list
         )
 
         all_tickers.sort_index(inplace=True)
