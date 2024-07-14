@@ -4,31 +4,55 @@ from config import PolygonConfig
 from tickers_and_names import PolygonAssets
 
 import pandas as pd
+import csv
 import os
 import logging
 
 
+def list_to_string(x):
+    if not hasattr(x, '__len__'):
+        return str(x)
+    if len(x) == 0:
+        return ""
+    if len(x) == 1:
+        return str(x[0])
+    s = set([str(y) for y in x])
+    return f"[{']['.join(sorted(list(s)))}]"
+
+
 def get_ticker_universe(config: PolygonConfig, fetch_missing: bool = False):
-    assets = PolygonAssets(config)
     tickers_csv_path = config.tickers_csv_path
     print(f"{tickers_csv_path=}")
-    if not os.path.exists(tickers_csv_path) or not os.path.exists(
-        tickers_csv_path.removesuffix(".csv") + ".parquet"
-    ):
+    parquet_path = tickers_csv_path.removesuffix(".csv") + ".parquet"
+    if not os.path.exists(parquet_path):
+        if os.path.exists(tickers_csv_path):
+            os.remove(tickers_csv_path)
+        assets = PolygonAssets(config)
         all_tickers = assets.load_all_tickers(fetch_missing=fetch_missing)
         all_tickers.info()
         # all_tickers.to_csv(tickers_csv_path)
         logging.info("Merging tickers")
         merged_tickers = assets.merge_tickers(all_tickers)
         merged_tickers.info()
-        merged_tickers.to_csv(tickers_csv_path)
-        print(f"Saved {len(merged_tickers)} tickers to {tickers_csv_path}")
         merged_tickers.to_parquet(tickers_csv_path.removesuffix(".csv") + ".parquet")
         print(
             f"Saved {len(merged_tickers)} tickers to {tickers_csv_path.removesuffix('.csv') + '.parquet'}"
         )
+    if not os.path.exists(tickers_csv_path):
+        merged_tickers = pd.read_parquet(parquet_path)
+        merged_tickers['name'] = merged_tickers['name'].apply(list_to_string)
+        merged_tickers['share_class_figi'] = merged_tickers['share_class_figi'].apply(list_to_string)
+        merged_tickers['delisted_utc'] = merged_tickers['delisted_utc'].apply(list_to_string)
+        merged_tickers['currency_name'] = merged_tickers['currency_name'].apply(list_to_string)
+        merged_tickers['locale'] = merged_tickers['locale'].apply(list_to_string)
+        merged_tickers['market'] = merged_tickers['market'].apply(list_to_string)
+        merged_tickers.to_csv(tickers_csv_path, escapechar="\\", quoting=csv.QUOTE_NONNUMERIC)
+        print(f"Saved {len(merged_tickers)} tickers to {tickers_csv_path}")
+
     merged_tickers = pd.read_csv(
         tickers_csv_path,
+        escapechar="\\",
+        quoting=csv.QUOTE_NONNUMERIC,
         dtype={
             "ticker": str,
             "primary_exchange": str,
@@ -144,11 +168,11 @@ if __name__ == "__main__":
     config = PolygonConfig(
         environ=os.environ,
         calendar_name="XNYS",
-        start_session="2020-01-01",
-        # end_session="2023-01-01",
-        # start_session="2003-10-01",
-        # end_session="2024-07-12",
+        start_session="2003-10-01",
+        # start_session="2018-01-01",
         # start_session="2023-01-01",
-        end_session="2023-12-31",
+        # end_session="2023-01-12",
+        # end_session="2023-12-31",
+        end_session="2024-06-30",
     )
     print(f"{get_ticker_universe(config, fetch_missing=True)}")
