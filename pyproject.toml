@@ -1,5 +1,5 @@
 [project]
-name = 'zipline-bundle-polygon'
+name = 'zipline-polygon-bundle'
 version = '0.1.0'
 description = 'A zipline-reloaded data provider bundle for Polygon.io'
 authors = [
@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = 'https://github.com/fovi-llc/zipline-bundle-polygon'
+Repository = 'https://github.com/fovi-llc/zipline-polygon-bundle'
 
 [build-system]
 build-backend = 'setuptools.build_meta'
