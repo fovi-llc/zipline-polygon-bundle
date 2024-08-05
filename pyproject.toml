@@ -42,3 +42,12 @@ requires = [
     #    'Cython>=3',
     # 'oldest-supported-numpy; python_version>="3.8"',
 ]
+
+[tool.pytest.ini_options]
+# https://docs.pytest.org/en/stable/how-to/capture-warnings.html#controlling-warnings
+filterwarnings = [
+    # "error",
+    # "ignore::UserWarning",
+    # note the use of single quote below to denote "raw" strings in TOML
+    'ignore:co_lnotab is deprecated, use co_lines instead:DeprecationWarning',
+]
