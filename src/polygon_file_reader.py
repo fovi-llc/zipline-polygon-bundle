@@ -3,6 +3,7 @@ import glob
 import pandas as pd
 from concurrent.futures import ProcessPoolExecutor
 from config import PolygonConfig
+import fastparquet as fp
 
 
 def convert_timestamp(x):
@@ -26,15 +27,18 @@ def convert_timestamp(x):
         return pd.NaT
 
 
-def convert_minute_csv_to_parquet(path, extension, compression="infer"):
+def convert_minute_csv_to_parquet(path, extension, compression):
     print(path)
     try:
         bars_df = pd.read_csv(
             path,
             compression=compression,
-            converters={"ticker": lambda x: str(x), "window_start": convert_timestamp},
+            converters={"window_start": convert_timestamp},
+            dtype={"ticker": 'str'},
         )
+        # bars_df["ticker"] = bars_df["ticker"].astype(str)
         # bars_df.info()
+        # print(f"{bars_df["ticker"].str.len().max()=}")
         if len(bars_df) == 0:
             print(f"WARNING: Empty {path}")
             return
@@ -45,6 +49,7 @@ def convert_minute_csv_to_parquet(path, extension, compression="infer"):
         # bars_df.sort_index(inplace=True)
         parquet_path = path.removesuffix(extension) + ".parquet"
         bars_df.to_parquet(parquet_path)
+        # fp.write(parquet_path, bars_df, has_nulls=False, write_index=False, fixed_text={"ticker": bars_df["ticker"].str.len().max()})
         if not os.path.exists(parquet_path):
             print(f"ERROR: Failed to write {parquet_path}")
     except Exception as e:
@@ -96,5 +101,7 @@ def process_all_minute_csv_to_parquet(
 
 
 if __name__ == "__main__":
+    os.environ["POLYGON_DATA_DIR"] = "/Volumes/Oahu/Mirror/files.polygon.io"
     config = PolygonConfig(environ=os.environ, calendar_name="XNYS", start_session=None, end_session=None)
     process_all_minute_csv_to_parquet(config.minute_aggs_dir)
+    # convert_minute_csv_to_parquet(os.path.join(config.minute_aggs_dir, "2016/01/2016-01-04.csv.gz"), extension=".csv.gz", compression="infer")
