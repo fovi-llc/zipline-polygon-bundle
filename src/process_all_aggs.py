@@ -6,53 +6,50 @@ import fastparquet as fp
 from pathlib import Path
 
 
-def aggs_max_ticker_len(
+def apply_to_aggs(
     aggs_path: Path,
+    func: callable,
     start_timestamp: pd.Timestamp = None,
     end_timestamp: pd.Timestamp = None,
 ):
     aggs_pf = fp.ParquetFile(aggs_path)
     df = aggs_pf.to_pandas()
-    if df.empty:
-        return 0
     # Drop rows with window_start not in the range config.start_session to config.end_session
-    # Those are dates (i.e. time 0:00:00) and end_session is inclusive.
+    # Those are dates (i.e. time 00:00:00) and end_session is inclusive.
     if start_timestamp is None and end_timestamp is None:
-        print("unreachable?")
-        return df["ticker"].str.len().max()
+        return func(df, aggs_path)
     if start_timestamp is None:
         start_timestamp = pd.Timestamp.min
     if end_timestamp is None:
         end_timestamp = pd.Timestamp.max
     else:
         end_timestamp = end_timestamp + pd.Timedelta(days=1)
-    df = df[df["window_start"].between(start_timestamp, end_timestamp, inclusive="left")]
-    if df.empty:
-        return 0
-    print(f"{aggs_path=}")
-    return df["ticker"].str.len().max()
+    df = df[
+        df["window_start"].between(start_timestamp, end_timestamp, inclusive="left")
+    ]
+    return func(df, aggs_path)
 
 
-def all_aggs_max_ticker_len(
+# TODO: Return iterable of results
+def apply_to_all_aggs(
     aggs_dir: str,
+    func: callable,
     start_timestamp: pd.Timestamp = None,
     end_timestamp: pd.Timestamp = None,
     aggs_pattern: str = "**/*.parquet",
     max_workers=None,
-):
+) -> list:
     """zipline does bundle ingestion one ticker at a time."""
     paths = list(
         glob.glob(os.path.join(aggs_dir, aggs_pattern), recursive="**" in aggs_pattern)
     )
     if max_workers == 0:
-        max_ticker_lens = [
-            aggs_max_ticker_len(
-                path, start_timestamp=start_timestamp, end_timestamp=end_timestamp
+        return [
+            apply_to_aggs(
+                path, func, start_timestamp=start_timestamp, end_timestamp=end_timestamp
             )
             for path in paths
         ]
-        print(f"{len(max_ticker_lens)=}")
-        print(f"{max(max_ticker_lens)=}")
     else:
         # with ProcessPoolExecutor(max_workers=max_workers) as executor:
         #     executor.map(
@@ -60,6 +57,12 @@ def all_aggs_max_ticker_len(
         #         paths,
         #     )
         print("Not implemented")
+        return None
+
+
+def max_ticker_len(df, path):
+    print(f"{path=}")
+    return 0 if df.empty else df["ticker"].str.len().max()
 
 
 if __name__ == "__main__":
@@ -67,17 +70,25 @@ if __name__ == "__main__":
     config = PolygonConfig(
         environ=os.environ,
         calendar_name="XNYS",
-        start_session="2020-10-05",
+        start_session="2020-10-07",
         end_session="2020-10-15",
     )
-    all_aggs_max_ticker_len(
+    max_ticker_lens = apply_to_all_aggs(
         config.minute_aggs_dir,
+        func=max_ticker_len,
         aggs_pattern="2020/10/**/*.parquet",
-        # start_timestamp=config.start_timestamp,
-        # end_timestamp=config.end_timestamp,
+        start_timestamp=config.start_timestamp,
+        end_timestamp=config.end_timestamp,
         max_workers=0,
     )
+    print(f"{max_ticker_lens=}")
+    print(f"{len(max_ticker_lens)=}")
+    print(f"{max(max_ticker_lens)=}")
 
 # 2016 to 2024
 # len(max_ticker_lens)=2184
 # max(max_ticker_lens)=10
+# 2020-10-07 to 2020-10-15
+# max_ticker_lens=[0, 0, 0, 0, 8, 8, 8, 8, 8, 8, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+# len(max_ticker_lens)=22
+# max(max_ticker_lens)=8
