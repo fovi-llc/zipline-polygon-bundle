@@ -13,8 +13,12 @@ def aggs_max_ticker_len(
 ):
     aggs_pf = fp.ParquetFile(aggs_path)
     df = aggs_pf.to_pandas()
+    if df.empty:
+        return 0
     # Drop rows with window_start not in the range config.start_session to config.end_session
     # Those are dates (i.e. time 0:00:00) and end_session is inclusive.
+    if start_timestamp is None and end_timestamp is None:
+        return df["ticker"].str.len().max()
     if start_timestamp is None:
         start_timestamp = pd.Timestamp.min
     if end_timestamp is None:
@@ -68,8 +72,8 @@ if __name__ == "__main__":
     all_aggs_max_ticker_len(
         config.minute_aggs_dir,
         aggs_pattern="2020/10/**/*.parquet",
-        start_timestamp=config.start_timestamp,
-        end_timestamp=config.end_timestamp,
+        # start_timestamp=config.start_timestamp,
+        # end_timestamp=config.end_timestamp,
         max_workers=0,
     )
 
