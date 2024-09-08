@@ -9,6 +9,7 @@ from pathlib import Path
 def apply_to_aggs(
     aggs_path: Path,
     func: callable,
+    config: PolygonConfig,
     start_timestamp: pd.Timestamp = None,
     end_timestamp: pd.Timestamp = None,
 ):
@@ -17,7 +18,7 @@ def apply_to_aggs(
     # Drop rows with window_start not in the range config.start_session to config.end_session
     # Those are dates (i.e. time 00:00:00) and end_session is inclusive.
     if start_timestamp is None and end_timestamp is None:
-        return func(df, aggs_path)
+        return func(df, aggs_path, config)
     if start_timestamp is None:
         start_timestamp = pd.Timestamp.min
     if end_timestamp is None:
@@ -27,13 +28,14 @@ def apply_to_aggs(
     df = df[
         df["window_start"].between(start_timestamp, end_timestamp, inclusive="left")
     ]
-    return func(df, aggs_path)
+    return func(df, aggs_path, config)
 
 
 # TODO: Return iterable of results
 def apply_to_all_aggs(
     aggs_dir: str,
     func: callable,
+    config: PolygonConfig,
     start_timestamp: pd.Timestamp = None,
     end_timestamp: pd.Timestamp = None,
     aggs_pattern: str = "**/*.parquet",
@@ -46,7 +48,7 @@ def apply_to_all_aggs(
     if max_workers == 0:
         return [
             apply_to_aggs(
-                path, func, start_timestamp=start_timestamp, end_timestamp=end_timestamp
+                path, func, config=config, start_timestamp=start_timestamp, end_timestamp=end_timestamp
             )
             for path in paths
         ]
@@ -60,7 +62,7 @@ def apply_to_all_aggs(
         return None
 
 
-def max_ticker_len(df, path):
+def max_ticker_len(df: pd.DataFrame, path: Path, config: PolygonConfig):
     print(f"{path=}")
     return 0 if df.empty else df["ticker"].str.len().max()
 
@@ -76,6 +78,7 @@ if __name__ == "__main__":
     max_ticker_lens = apply_to_all_aggs(
         config.minute_aggs_dir,
         func=max_ticker_len,
+        config=config,
         aggs_pattern="2020/10/**/*.parquet",
         start_timestamp=config.start_timestamp,
         end_timestamp=config.end_timestamp,
