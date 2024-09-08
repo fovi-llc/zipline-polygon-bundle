@@ -18,7 +18,8 @@ class PolygonConfig:
         if environ.get("POLYGON_MAX_WORKERS", "").strip() != "":
             self.max_workers = int(environ.get("POLYGON_MAX_WORKERS"))
         self.api_key = environ.get("POLYGON_API_KEY")
-        self.data_dir = environ.get("POLYGON_DATA_DIR", "data/polygon")
+        self.data_dir = environ.get("POLYGON_DATA_DIR", "data/files.polygon.io")
+        self.cik_cusip_mapping_csv_path = environ.get("CIK_CUSIP_MAPS_CSV", os.path.join(self.data_dir, "cik-cusip-maps.csv"))
         self.asset_subdir = environ.get("POLYGON_ASSET_SUBDIR", "us_stocks_sip")
         self.market = environ.get("POLYGON_MARKET", "stocks")
         self.tickers_dir = environ.get(
@@ -37,6 +38,9 @@ class PolygonConfig:
         )
         self.asset_files_dir = os.path.join(self.flat_files_dir, self.asset_subdir)
         self.minute_aggs_dir = os.path.join(self.asset_files_dir, "minute_aggs_v1")
+        self.daily_aggs_dir = os.path.join(self.asset_files_dir, "daily_aggs_v1")
+        self.minute_by_ticker_dir = os.path.join(self.asset_files_dir, "minute_by_ticker_v1")
+        self.daily_by_ticker_dir = os.path.join(self.asset_files_dir, "daily_by_ticker_v1")
 
     @property
     def calendar(self):
