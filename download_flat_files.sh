@@ -1,3 +1,6 @@
+# Using rclone to download Polygon flat files
+# I tried using Minio Client (mc) but it had problems with some of the files.
+
 # Install rclone
 # brew install rclone
 
@@ -9,6 +12,14 @@ rclone config create s3polygon s3 env_auth=false access_key_id=$POLYGON_S3_Acces
 
 # List
 rclone ls s3polygon:flatfiles
+
+# Total size
+rclone ls s3polygon:flatfiles | awk '{sum += $1} END {print sum}' - 
+# 71397095379572 71,397,095,379,572
+rclone ls s3polygon:flatfiles/us_stocks_sip | awk '{sum += $1} END {print sum}' -
+# 12738193813682 12,738,193,813,682 12.7 TB
+
+rclone ls s3polygon:flatfiles/us_stocks_sip | awk '{sum += $1; count++} END {print "Total size:", sum/1000000000, "GB File count:", count}'
 
 # Copy
 
@@ -26,7 +37,6 @@ rclone copy -P s3polygon:flatfiles/us_stocks_sip/trades_v1/$POLYGON_YEAR $POLYGO
 find $POLYGON_DATA_DIR/flatfiles -type f -name "*.partial"
 find $POLYGON_DATA_DIR/flatfiles -type f -name "*.partial" -exec rm -f {} \;
 
-
 # New external location
 
 export POLYGON_DATA_DIR=/Volumes/Oahu/Mirror/files.polygon.io
@@ -34,27 +44,22 @@ export POLYGON_DATA_DIR=/Volumes/Oahu/Mirror/files.polygon.io
 mkdir -p $POLYGON_DATA_DIR
 cp -r /Users/jim/Projects/zipline-polygon-bundle/data/polygon/flatfiles $POLYGON_DATA_DIR
 
-mc cp --recursive s3polygon/flatfiles/us_stocks_sip/minute_aggs_v1/2016 \
-    s3polygon/flatfiles/us_stocks_sip/minute_aggs_v1/2017 \
-    s3polygon/flatfiles/us_stocks_sip/minute_aggs_v1/2018 \
-    s3polygon/flatfiles/us_stocks_sip/minute_aggs_v1/2019 \
-    $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/minute_aggs_v1
 
 for year in 2016 2017 2018 2019 2020 2021 2022 2023 2024; do \
-    mc mirror s3polygon/flatfiles/us_stocks_sip/day_aggs_v1/$year \
+    rclone copy -P s3polygon:flatfiles/us_stocks_sip/day_aggs_v1/$year \
     $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/day_aggs_v1/$year; \
-    mc mirror s3polygon/flatfiles/us_stocks_sip/minute_aggs_v1/$year \
+    rclone copy -P s3polygon:flatfiles/us_stocks_sip/minute_aggs_v1/$year \
     $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/minute_aggs_v1/$year; \
 done
 
 
 
 for year in 2016 2017 2018 2019 2020 2021 2022 2023 2024; do \
-    mc mirror s3polygon/flatfiles/us_stocks_sip/trades_v1/$year \
+    rclone copy -P s3polygon:flatfiles/us_stocks_sip/trades_v1/$year \
     $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/trades_v1/$year; \
 done
 
-mc mirror s3polygon/flatfiles/us_stocks_sip/trades_v1/2020 \
+rclone copy -P  s3polygon:flatfiles/us_stocks_sip/trades_v1/2020 \
     $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/trades_v1/2020;
 
 
