@@ -18,6 +18,7 @@ def aggs_max_ticker_len(
     # Drop rows with window_start not in the range config.start_session to config.end_session
     # Those are dates (i.e. time 0:00:00) and end_session is inclusive.
     if start_timestamp is None and end_timestamp is None:
+        print("unreachable?")
         return df["ticker"].str.len().max()
     if start_timestamp is None:
         start_timestamp = pd.Timestamp.min
