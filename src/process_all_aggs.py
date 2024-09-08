@@ -45,6 +45,8 @@ def apply_to_all_aggs(
     paths = list(
         glob.glob(os.path.join(aggs_dir, aggs_pattern), recursive="**" in aggs_pattern)
     )
+    print(f"{len(paths)=}")
+    print(f"{paths[:5]=}")
     if max_workers == 0:
         return [
             apply_to_aggs(
@@ -62,21 +64,21 @@ def apply_to_all_aggs(
         return None
 
 
-def max_ticker_len(df: pd.DataFrame, path: Path, config: PolygonConfig):
-    print(f"{path=}")
-    return 0 if df.empty else df["ticker"].str.len().max()
-
-
 if __name__ == "__main__":
     # os.environ["POLYGON_DATA_DIR"] = "/Volumes/Oahu/Mirror/files.polygon.io"
+    def max_ticker_len(df: pd.DataFrame, path: Path, config: PolygonConfig):
+        print(f"{path=}")
+        return 0 if df.empty else df["ticker"].str.len().max()
+
     config = PolygonConfig(
         environ=os.environ,
         calendar_name="XNYS",
         start_session="2020-10-07",
         end_session="2020-10-15",
     )
+    print(f"{config.aggs_dir=}")
     max_ticker_lens = apply_to_all_aggs(
-        config.minute_aggs_dir,
+        config.aggs_dir,
         func=max_ticker_len,
         config=config,
         aggs_pattern="2020/10/**/*.parquet",

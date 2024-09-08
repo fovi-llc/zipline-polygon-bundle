@@ -36,11 +36,15 @@ class PolygonConfig:
         self.flat_files_dir = environ.get(
             "POLYGON_FLAT_FILES_DIR", os.path.join(self.data_dir, "flatfiles")
         )
+        self.agg_time = environ.get("POLYGON_AGG_TIME", "minute")
+        assert self.agg_time in ["minute", "day"]
         self.asset_files_dir = os.path.join(self.flat_files_dir, self.asset_subdir)
         self.minute_aggs_dir = os.path.join(self.asset_files_dir, "minute_aggs_v1")
-        self.daily_aggs_dir = os.path.join(self.asset_files_dir, "daily_aggs_v1")
+        self.day_aggs_dir = os.path.join(self.asset_files_dir, "day_aggs_v1")
         self.minute_by_ticker_dir = os.path.join(self.asset_files_dir, "minute_by_ticker_v1")
-        self.daily_by_ticker_dir = os.path.join(self.asset_files_dir, "daily_by_ticker_v1")
+        self.day_by_ticker_dir = os.path.join(self.asset_files_dir, "day_by_ticker_v1")
+        self.aggs_dir = self.minute_aggs_dir if self.agg_time == "minute" else self.day_aggs_dir
+        self.by_ticker_dir = self.minute_by_ticker_dir if self.agg_time == "minute" else self.day_by_ticker_dir
 
     @property
     def calendar(self):

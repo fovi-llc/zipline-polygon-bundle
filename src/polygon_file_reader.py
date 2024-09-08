@@ -27,7 +27,7 @@ def convert_timestamp(x):
         return pd.NaT
 
 
-def convert_minute_csv_to_parquet(path, extension, compression):
+def convert_csv_to_parquet(path, extension, compression):
     print(path)
     try:
         bars_df = pd.read_csv(
@@ -42,8 +42,8 @@ def convert_minute_csv_to_parquet(path, extension, compression):
         if len(bars_df) == 0:
             print(f"WARNING: Empty {path}")
             return
-        if len(bars_df) < 100000:
-            print(f"WARNING: Short {path}")
+        # if len(bars_df) < 100000:
+        #     print(f"WARNING: Short {path}")
         # Don't change the data.  We're just converting to Parquet to save time.
         # bars_df.set_index(["window_start", "ticker"], inplace=True)
         # bars_df.sort_index(inplace=True)
@@ -56,8 +56,8 @@ def convert_minute_csv_to_parquet(path, extension, compression):
         print(f"Failed for {path}: {e}")
 
 
-def process_all_minute_csv_to_parquet(
-    minute_aggs_dir,
+def process_all_csv_to_parquet(
+    aggs_dir,
     recursive=True,
     extension=".csv.gz",
     compression="infer",
@@ -67,7 +67,7 @@ def process_all_minute_csv_to_parquet(
     """Big CSV files are very slow to read.  So we only read them once and convert them to Parquet."""
     csv_pattern = f"**/*{extension}" if recursive else f"*{extension}"
     paths = list(
-        glob.glob(os.path.join(minute_aggs_dir, csv_pattern), recursive=recursive)
+        glob.glob(os.path.join(aggs_dir, csv_pattern), recursive=recursive)
     )
     if force:
         print(f"Removing Parquet files that may exist for {len(paths)} CSV files.")
@@ -87,13 +87,13 @@ def process_all_minute_csv_to_parquet(
             print(f"Skipping {csv_file_count - len(paths)} already converted files.")
     if max_workers == 0:
         for path in paths:
-            convert_minute_csv_to_parquet(
+            convert_csv_to_parquet(
                 path, extension=extension, compression=compression
             )
     else:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             executor.map(
-                convert_minute_csv_to_parquet,
+                convert_csv_to_parquet,
                 paths,
                 [extension] * len(paths),
                 [compression] * len(paths),
@@ -101,7 +101,6 @@ def process_all_minute_csv_to_parquet(
 
 
 if __name__ == "__main__":
-    os.environ["POLYGON_DATA_DIR"] = "/Volumes/Oahu/Mirror/files.polygon.io"
+    # os.environ["POLYGON_DATA_DIR"] = "/Volumes/Oahu/Mirror/files.polygon.io"
     config = PolygonConfig(environ=os.environ, calendar_name="XNYS", start_session=None, end_session=None)
-    process_all_minute_csv_to_parquet(config.minute_aggs_dir)
-    # convert_minute_csv_to_parquet(os.path.join(config.minute_aggs_dir, "2016/01/2016-01-04.csv.gz"), extension=".csv.gz", compression="infer")
+    process_all_csv_to_parquet(config.aggs_dir)
