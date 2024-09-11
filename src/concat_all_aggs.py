@@ -9,52 +9,32 @@ import pyarrow as pa
 from pyarrow import dataset as pa_ds
 from pyarrow import csv as pa_csv
 
-PARTITION_COLUMN_NAME = "part"
-
-
-# To work across all reasonable filesystems, we need to escape the characters in partition keys that are treated weirdly in filenames.
-def partition_key_escape(c: str) -> str:
-    return ("^" + c.upper()) if c.islower() else ("%" + "%02X" % ord(c))
-
-
-def to_partition_key(s: str) -> str:
-    if s.isalnum() and s.isupper():
-        return s
-    return "".join(
-        [f"{c if (c.isupper() or c.isdigit()) else partition_key_escape(c)}" for c in s]
-    )
-
-
-def read_csv_table(path, timestamp_type: pa.TimestampType, convert_options):
-    table = pa.csv.read_csv(path, convert_options=convert_options)
-    table = table.set_column(
-        table.column_names.index("window_start"),
-        "window_start",
-        table.column("window_start").cast(timestamp_type),
-    )
-    return table
-
 
 def csv_agg_scanner(
-    paths: list, schema: pa.Schema, timestamp_type: pa.TimestampType
+    paths: list, schema: pa.Schema,
 ) -> Iterator[pa.RecordBatch]:
+    empty_table = schema.empty_table()
+    # TODO: Find which column(s) need to be cast to int64 from the schema.
+    empty_table = empty_table.set_column(
+        empty_table.column_names.index("window_start"),
+        "window_start",
+        empty_table.column("window_start").cast(pa.int64()),
+    )
+    csv_schema = empty_table.schema
+
     for path in paths:
         convert_options = pa_csv.ConvertOptions(
-            column_types=schema,
+            column_types=csv_schema,
             strings_can_be_null=False,
             quoted_strings_can_be_null=False,
         )
 
         print(f"{path=}")
-        table = read_csv_table(
-            path=path, timestamp_type=timestamp_type, convert_options=convert_options
-        )
-
-        table = table.append_column(
-            PARTITION_COLUMN_NAME,
-            pa.array(
-                [to_partition_key(ticker) for ticker in table.column("ticker").to_pylist()]
-            ),
+        table = pa.csv.read_csv(path, convert_options=convert_options)
+        table = table.set_column(
+            table.column_names.index("window_start"),
+            "window_start",
+            table.column("window_start").cast(schema.field("window_start").type),
         )
 
         for batch in table.to_batches():
@@ -102,33 +82,27 @@ def concat_all_aggs_from_csv(
             pa.field("close", price_type, nullable=False),
             pa.field("high", price_type, nullable=False),
             pa.field("low", price_type, nullable=False),
-            pa.field("window_start", pa.int64(), nullable=False),
+            pa.field("window_start", timestamp_type, nullable=False),
             pa.field("transactions", pa.int64(), nullable=False),
         ]
     )
 
-    partitioned_schema = polygon_aggs_schema.append(
-        pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False)
-    )
     agg_scanner = pa_ds.Scanner.from_batches(
-        csv_agg_scanner(paths=paths, schema=polygon_aggs_schema, timestamp_type=timestamp_type),
-        schema=partitioned_schema
+        csv_agg_scanner(
+            paths=paths, schema=polygon_aggs_schema
+        ),
+        schema=polygon_aggs_schema,
     )
 
     by_ticker_base_dir = os.path.join(
         config.by_ticker_dir,
         f"{config.agg_time}_{config.start_timestamp.date().isoformat()}_{config.end_timestamp.date().isoformat()}.hive",
     )
-    partition_by_ticker = pa.dataset.partitioning(
-        pa.schema([(PARTITION_COLUMN_NAME, pa.string())]), flavor="hive"
-    )
     pa_ds.write_dataset(
         agg_scanner,
         base_dir=by_ticker_base_dir,
         format="parquet",
-        partitioning=partition_by_ticker,
         existing_data_behavior="overwrite_or_ignore",
-        max_partitions=config.max_partitions,
     )
 
 
@@ -136,10 +110,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--calendar_name", default="XNYS")
 
-    parser.add_argument("--start_session", default="2014-06-16")
-    parser.add_argument("--end_session", default="2024-09-06")
-    # parser.add_argument("--start_session", default="2020-10-07")
-    # parser.add_argument("--end_session", default="2020-10-15")
+    # parser.add_argument("--start_session", default="2014-06-16")
+    # parser.add_argument("--end_session", default="2024-09-06")
+    parser.add_argument("--start_session", default="2020-01-01")
+    parser.add_argument("--end_session", default="2020-12-31")
     # parser.add_argument("--aggs_pattern", default="2020/10/**/*.csv.gz")
     parser.add_argument("--aggs_pattern", default="**/*.csv.gz")
 
@@ -159,7 +133,7 @@ if __name__ == "__main__":
         environ["POLYGON_AGG_TIME"] = args.agg_time
 
     config = PolygonConfig(
-        environ=os.environ,
+        environ=environ,
         calendar_name=args.calendar_name,
         start_session=args.start_session,
         end_session=args.end_session,
