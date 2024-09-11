@@ -135,9 +135,14 @@ def concat_all_aggs_from_csv(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--calendar_name", default="XNYS")
-    parser.add_argument("--start_session", default="2020-10-07")
-    parser.add_argument("--end_session", default="2020-10-15")
-    parser.add_argument("--aggs_pattern", default="2020/10/**/*.csv.gz")
+
+    parser.add_argument("--start_session", default="2014-06-16")
+    parser.add_argument("--end_session", default="2024-09-06")
+    # parser.add_argument("--start_session", default="2020-10-07")
+    # parser.add_argument("--end_session", default="2020-10-15")
+    # parser.add_argument("--aggs_pattern", default="2020/10/**/*.csv.gz")
+    parser.add_argument("--aggs_pattern", default="**/*.csv.gz")
+
     parser.add_argument("--overwrite", action="store_true")
 
     # TODO: These defaults should be None but for dev convenience they are set for my local config.
@@ -160,7 +165,7 @@ if __name__ == "__main__":
         end_session=args.end_session,
     )
 
-    concat_all_aggs(
+    concat_all_aggs_from_csv(
         config=config,
         aggs_pattern=args.aggs_pattern,
     )
