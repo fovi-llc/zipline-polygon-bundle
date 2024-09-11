@@ -1,120 +1,166 @@
-import argparse
-import os
+from typing import Iterator
 from config import PolygonConfig
-import fastparquet as fp
-import pandas as pd
-from pathlib import Path
+
+import argparse
+import glob
+import os
+
+import pyarrow as pa
+from pyarrow import dataset as pa_ds
+from pyarrow import csv as pa_csv
+
+PARTITION_COLUMN_NAME = "part"
 
 
-from process_all_aggs import apply_to_all_aggs
+# To work across all reasonable filesystems, we need to escape the characters in partition keys that are treated weirdly in filenames.
+def partition_key_escape(c: str) -> str:
+    return ("^" + c.upper()) if c.islower() else ("%" + "%02X" % ord(c))
 
 
-def create_concatenated_aggs(config: PolygonConfig, overwrite: bool = False):
-    """Create a single parquet file with all aggregates sorted by ticker then window_start."""
-    by_ticker_dir = Path(config.by_ticker_dir)
-    by_ticker_dir.mkdir(parents=True, exist_ok=True)
-    by_ticker_path = (
-        by_ticker_dir
-        / f"{config.agg_time}_{config.start_timestamp.date().isoformat()}_{config.end_timestamp.date().isoformat()}.hive"
+def to_partition_key(s: str) -> str:
+    if s.isalnum() and s.isupper():
+        return s
+    return "".join(
+        [f"{c if (c.isupper() or c.isdigit()) else partition_key_escape(c)}" for c in s]
     )
-    print(f"{by_ticker_path=}")
-    if by_ticker_path.exists():
-        assert overwrite, f"{by_ticker_path} exists and overwrite is False"
-        if not overwrite:
-            return None
-    aggs_schema = {
-        "ticker": "string",
-        "volume": "int",
-        "open": "float",
-        "high": "float",
-        "low": "float",
-        "close": "float",
-        "window_start": "datetime64[ns]",
-        "transactions": "int",
-    }
-    df = pd.DataFrame(
-        data=[],
-        columns=[
-            "ticker",
-            "volume",
-            "open",
-            "close",
-            "high",
-            "low",
-            "window_start",
-            "transactions",
-        ],
-    ).astype(aggs_schema)
-    # df.set_index(["ticker"], inplace=True)
-    # df.info()
-    fp.write(
-        by_ticker_path,
-        df,
-        file_scheme="hive",
-        has_nulls=False,
-        # write_index=True,
-        # partition_on=["ticker"],
+
+
+def read_csv_table(path, timestamp_type: pa.TimestampType, convert_options):
+    table = pa.csv.read_csv(path, convert_options=convert_options)
+    table = table.set_column(
+        table.column_names.index("window_start"),
+        "window_start",
+        table.column("window_start").cast(timestamp_type),
     )
-    return by_ticker_path
+    return table
 
 
-def sort_by_window_start(rgs):
-    print(f"{type(rgs)=}")
-    print(f"{rgs=}")
-    return rgs
+def csv_agg_scanner(
+    paths: list, schema: pa.Schema, timestamp_type: pa.TimestampType
+) -> Iterator[pa.RecordBatch]:
+    for path in paths:
+        convert_options = pa_csv.ConvertOptions(
+            column_types=schema,
+            strings_can_be_null=False,
+            quoted_strings_can_be_null=False,
+        )
+
+        print(f"{path=}")
+        table = read_csv_table(
+            path=path, timestamp_type=timestamp_type, convert_options=convert_options
+        )
+
+        table = table.append_column(
+            PARTITION_COLUMN_NAME,
+            pa.array(
+                [to_partition_key(ticker) for ticker in table.column("ticker").to_pylist()]
+            ),
+        )
+
+        for batch in table.to_batches():
+            yield batch
 
 
-def concat_aggs(df: pd.DataFrame, aggs_path: Path, config: PolygonConfig):
-    if len(df) == 0:
-        print(f"Empty {aggs_path}")
-        return 0
-    print(f"Processing {aggs_path}")
-    df.info()
-    by_ticker_path = os.path.join(
+def concat_all_aggs_from_csv(
+    config: PolygonConfig,
+    aggs_pattern: str = "**/*.csv.gz",
+) -> list:
+    """zipline does bundle ingestion one ticker at a time."""
+
+    # We sort by path because they have the year and month in the dir names and the date in the filename.
+    paths = sorted(
+        list(
+            glob.glob(
+                os.path.join(config.aggs_dir, aggs_pattern),
+                recursive="**" in aggs_pattern,
+            )
+        )
+    )
+
+    # Polygon Aggregate flatfile timestamps are in nanoseconds (like trades), not milliseconds as the docs say.
+    # I make the timestamp timezone-aware because that's how Unix timestamps work and it may help avoid mistakes.
+    timestamp_type = pa.timestamp("ns", tz="UTC")
+
+    # But we can't use the timestamp type in the schema here because it's not supported by the CSV reader.
+    # So we'll use int64 and cast it after reading the CSV file.
+    # https://github.com/apache/arrow/issues/44030
+
+    # strptime(3) (used by CSV reader for timestamps in ConvertOptions.timestamp_parsers) supports Unix timestamps (%s) and milliseconds (%f) but not nanoseconds.
+    # https://www.geeksforgeeks.org/how-to-use-strptime-with-milliseconds-in-python/
+    # Actually that's the wrong strptime (it's Python's).  C++ strptime(3) doesn't even support %f.
+    # https://github.com/apache/arrow/issues/39839#issuecomment-1915981816
+    # Also I don't think you can use those in a format string without a separator.
+
+    # Polygon price scale is 4 decimal places (i.e. hundredths of a penny), but we'll use 10 because we have precision to spare.
+    price_type = pa.decimal128(precision=38, scale=10)
+
+    polygon_aggs_schema = pa.schema(
+        [
+            pa.field("ticker", pa.string(), nullable=False),
+            pa.field("volume", pa.int64(), nullable=False),
+            pa.field("open", price_type, nullable=False),
+            pa.field("close", price_type, nullable=False),
+            pa.field("high", price_type, nullable=False),
+            pa.field("low", price_type, nullable=False),
+            pa.field("window_start", pa.int64(), nullable=False),
+            pa.field("transactions", pa.int64(), nullable=False),
+        ]
+    )
+
+    partitioned_schema = polygon_aggs_schema.append(
+        pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False)
+    )
+    agg_scanner = pa_ds.Scanner.from_batches(
+        csv_agg_scanner(paths=paths, schema=polygon_aggs_schema, timestamp_type=timestamp_type),
+        schema=partitioned_schema
+    )
+
+    by_ticker_base_dir = os.path.join(
         config.by_ticker_dir,
         f"{config.agg_time}_{config.start_timestamp.date().isoformat()}_{config.end_timestamp.date().isoformat()}.hive",
     )
-    aggs_fp = fp.ParquetFile(aggs_path)
-    aggs_df = aggs_fp.to_pandas()
-    aggs_df.info()
-    # aggs_df.set_index(["ticker"], inplace=True)
-    # aggs_df.info()
-    # Append to the by_ticker file
-    # fp.write(by_ticker_path, aggs_df, append=True, has_nulls=False, write_index=False)
-    tickers_fp = fp.ParquetFile(by_ticker_path, verify=True, pandas_nulls=False)
-    # tickers_fp.write_row_groups(aggs_df, sort_key=sort_by_window_start)
-    tickers_fp.write_row_groups(aggs_df)
-    return len(aggs_df)
+    partition_by_ticker = pa.dataset.partitioning(
+        pa.schema([(PARTITION_COLUMN_NAME, pa.string())]), flavor="hive"
+    )
+    pa_ds.write_dataset(
+        agg_scanner,
+        base_dir=by_ticker_base_dir,
+        format="parquet",
+        partitioning=partition_by_ticker,
+        existing_data_behavior="overwrite_or_ignore",
+        max_partitions=config.max_partitions,
+    )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--calendar_name", default="XNYS")
     parser.add_argument("--start_session", default="2020-10-07")
     parser.add_argument("--end_session", default="2020-10-15")
-    parser.add_argument("--aggs_pattern", default="2020/10/**/*.parquet")
+    parser.add_argument("--aggs_pattern", default="2020/10/**/*.csv.gz")
     parser.add_argument("--overwrite", action="store_true")
+
+    # TODO: These defaults should be None but for dev convenience they are set for my local config.
+    parser.add_argument("--agg_time", default="day")
+    parser.add_argument("--data_dir", default="/Volumes/Oahu/Mirror/files.polygon.io")
+
     args = parser.parse_args()
+
+    # Maybe the way to do this is to use the os.environ as the argparser defaults.
+    environ = dict(os.environ.items())
+    if args.data_dir:
+        environ["POLYGON_DATA_DIR"] = args.data_dir
+    if args.agg_time:
+        environ["POLYGON_AGG_TIME"] = args.agg_time
 
     config = PolygonConfig(
         environ=os.environ,
-        calendar_name="XNYS",
+        calendar_name=args.calendar_name,
         start_session=args.start_session,
         end_session=args.end_session,
     )
 
-    by_ticker_path = create_concatenated_aggs(config, overwrite=args.overwrite)
-    print(f"Created {by_ticker_path=}")
-
-    appended_rows = apply_to_all_aggs(
-        config.minute_aggs_dir,
-        func=concat_aggs,
+    concat_all_aggs(
         config=config,
         aggs_pattern=args.aggs_pattern,
-        start_timestamp=config.start_timestamp,
-        end_timestamp=config.end_timestamp,
-        max_workers=0,
     )
-
-    print(f"{appended_rows=}")
-    print(f"{len(appended_rows)=}")
-    print(f"{sum(appended_rows)=}")
