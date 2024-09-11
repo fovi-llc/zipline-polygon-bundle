@@ -36,7 +36,7 @@ class PolygonConfig:
         self.flat_files_dir = environ.get(
             "POLYGON_FLAT_FILES_DIR", os.path.join(self.data_dir, "flatfiles")
         )
-        self.agg_time = environ.get("POLYGON_AGG_TIME", "minute")
+        self.agg_time = environ.get("POLYGON_AGG_TIME", "day")
         assert self.agg_time in ["minute", "day"]
         self.asset_files_dir = os.path.join(self.flat_files_dir, self.asset_subdir)
         self.minute_aggs_dir = os.path.join(self.asset_files_dir, "minute_aggs_v1")
