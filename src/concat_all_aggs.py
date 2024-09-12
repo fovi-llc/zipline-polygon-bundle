@@ -9,9 +9,12 @@ import pyarrow as pa
 from pyarrow import dataset as pa_ds
 from pyarrow import csv as pa_csv
 
+import pandas as pd
+
 
 def csv_agg_scanner(
-    paths: list, schema: pa.Schema,
+    paths: list,
+    schema: pa.Schema,
 ) -> Iterator[pa.RecordBatch]:
     empty_table = schema.empty_table()
     # TODO: Find which column(s) need to be cast to int64 from the schema.
@@ -22,6 +25,7 @@ def csv_agg_scanner(
     )
     csv_schema = empty_table.schema
 
+    skipped_tables = 0
     for path in paths:
         convert_options = pa_csv.ConvertOptions(
             column_types=csv_schema,
@@ -29,16 +33,32 @@ def csv_agg_scanner(
             quoted_strings_can_be_null=False,
         )
 
-        print(f"{path=}")
         table = pa.csv.read_csv(path, convert_options=convert_options)
         table = table.set_column(
             table.column_names.index("window_start"),
             "window_start",
             table.column("window_start").cast(schema.field("window_start").type),
         )
+        expr = (
+            pa.compute.field("window_start")
+            >= pa.scalar(config.start_timestamp, type=schema.field("window_start").type)
+        ) & (
+            pa.compute.field("window_start")
+            < pa.scalar(
+                config.end_timestamp + pd.to_timedelta(1, unit="day"),
+                type=schema.field("window_start").type,
+            )
+        )
+        table = table.filter(expr)
 
+        if table.num_rows == 0:
+            skipped_tables += 1
+            continue
+
+        print(f"{path=}")
         for batch in table.to_batches():
             yield batch
+    print(f"{skipped_tables=}")
 
 
 def concat_all_aggs_from_csv(
@@ -88,9 +108,7 @@ def concat_all_aggs_from_csv(
     )
 
     agg_scanner = pa_ds.Scanner.from_batches(
-        csv_agg_scanner(
-            paths=paths, schema=polygon_aggs_schema
-        ),
+        csv_agg_scanner(paths=paths, schema=polygon_aggs_schema),
         schema=polygon_aggs_schema,
     )
 
@@ -110,10 +128,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--calendar_name", default="XNYS")
 
-    # parser.add_argument("--start_session", default="2014-06-16")
-    # parser.add_argument("--end_session", default="2024-09-06")
-    parser.add_argument("--start_session", default="2020-01-01")
-    parser.add_argument("--end_session", default="2020-12-31")
+    parser.add_argument("--start_session", default="2014-06-16")
+    parser.add_argument("--end_session", default="2024-09-06")
+    # parser.add_argument("--start_session", default="2020-01-01")
+    # parser.add_argument("--end_session", default="2020-12-31")
     # parser.add_argument("--aggs_pattern", default="2020/10/**/*.csv.gz")
     parser.add_argument("--aggs_pattern", default="**/*.csv.gz")
 
@@ -126,14 +144,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Maybe the way to do this is to use the os.environ as the argparser defaults.
-    environ = dict(os.environ.items())
     if args.data_dir:
-        environ["POLYGON_DATA_DIR"] = args.data_dir
+        os.environ["POLYGON_DATA_DIR"] = args.data_dir
     if args.agg_time:
-        environ["POLYGON_AGG_TIME"] = args.agg_time
+        os.environ["POLYGON_AGG_TIME"] = args.agg_time
 
     config = PolygonConfig(
-        environ=environ,
+        environ=os.environ,
         calendar_name=args.calendar_name,
         start_session=args.start_session,
         end_session=args.end_session,
