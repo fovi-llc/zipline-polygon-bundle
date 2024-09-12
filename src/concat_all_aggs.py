@@ -1,3 +1,4 @@
+import shutil
 from typing import Iterator
 from config import PolygonConfig
 
@@ -51,6 +52,11 @@ def csv_agg_scanner(
         )
         table = table.filter(expr)
 
+        # TODO: Also check that these rows are within range for this file's date (not just the whole session).
+        # And if we're doing that (figuring date for each file), we can just skip reading the file.
+        # Might able to do a single comparison using compute.days_between.
+        # https://arrow.apache.org/docs/python/generated/pyarrow.compute.days_between.html
+
         if table.num_rows == 0:
             skipped_tables += 1
             continue
@@ -64,8 +70,15 @@ def csv_agg_scanner(
 def concat_all_aggs_from_csv(
     config: PolygonConfig,
     aggs_pattern: str = "**/*.csv.gz",
+    overwrite: bool = False,
 ) -> list:
     """zipline does bundle ingestion one ticker at a time."""
+    if os.path.exists(config.by_ticker_hive_dir):
+        if overwrite:
+            print(f"Removing {config.by_ticker_hive_dir=}")
+            shutil.rmtree(config.by_ticker_hive_dir)
+        else:
+            raise FileExistsError(f"{config.by_ticker_hive_dir=} exists and overwrite is False.")
 
     # We sort by path because they have the year and month in the dir names and the date in the filename.
     paths = sorted(
@@ -112,16 +125,13 @@ def concat_all_aggs_from_csv(
         schema=polygon_aggs_schema,
     )
 
-    by_ticker_base_dir = os.path.join(
-        config.by_ticker_dir,
-        f"{config.agg_time}_{config.start_timestamp.date().isoformat()}_{config.end_timestamp.date().isoformat()}.hive",
-    )
     pa_ds.write_dataset(
         agg_scanner,
-        base_dir=by_ticker_base_dir,
+        base_dir=config.by_ticker_hive_dir,
         format="parquet",
         existing_data_behavior="overwrite_or_ignore",
     )
+    print(f"Concatenated aggregates to {config.by_ticker_hive_dir=}")
 
 
 if __name__ == "__main__":
@@ -159,4 +169,5 @@ if __name__ == "__main__":
     concat_all_aggs_from_csv(
         config=config,
         aggs_pattern=args.aggs_pattern,
+        overwrite=args.overwrite,
     )
