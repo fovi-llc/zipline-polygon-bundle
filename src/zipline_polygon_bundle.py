@@ -123,10 +123,9 @@ def polygon_equities_bundle(
 
     # Check valid trading dates, according to the selected exchange calendar
     sessions = calendar.sessions_in_range(start_session, end_session)
-    # sessions = calendar.sessions_in_range('1995-05-02', '2020-05-27')
 
     # Get data for all stocks and write to Zipline
-    daily_bar_writer.write(process_aggregates(aggregates, sessions, metadata, calendar))
+    daily_bar_writer.write(process_aggregates(aggregates, sessions, metadata, calendar), show_progress=show_progress)
 
     # Write the metadata
     asset_db_writer.write(equities=metadata)
@@ -136,9 +135,7 @@ def polygon_equities_bundle(
 
 
 def symbol_to_upper(s: str) -> str:
-    return "".join(
-        [f"{("^" + c.upper()) if c.lower() else c}" for c in s]
-    )
+    return "".join(map(lambda c: ("^" + c.upper()) if c.islower() else c, s))
 
 
 def process_aggregates(aggregates, sessions, metadata, calendar):
@@ -173,7 +170,7 @@ def process_aggregates(aggregates, sessions, metadata, calendar):
         df.bfill(inplace=True)
         # There should be no missing data
         if df.isnull().sum().sum() > 0:
-            print(f"Missing data for {symbol}")
+            print(f"WARNING: Missing data for {symbol}")
 
         # The auto_close date is the day after the last trade.
         ac_date = end_date + pd.Timedelta(days=1)
@@ -186,9 +183,8 @@ def process_aggregates(aggregates, sessions, metadata, calendar):
 
 def register_polygon_equities_bundle(
     bundlename,
-    start_session=pd.Timestamp("2023-01-03"),
-    # end_session="now",
-    end_session=pd.Timestamp("2023-12-28"),
+    start_session=None,
+    end_session="now",
     calendar_name="XNYS",
     # ticker_list=None,
     # watchlists=None,
