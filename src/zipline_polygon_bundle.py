@@ -1,8 +1,11 @@
+import pyarrow.compute
 from zipline.data.bundles import register
 
 from config import PolygonConfig
 from tickers_and_names import PolygonAssets
+from concat_all_aggs import concat_all_aggs_from_csv
 
+import pyarrow
 import pandas as pd
 import csv
 import os
@@ -10,7 +13,7 @@ import logging
 
 
 def list_to_string(x):
-    if not hasattr(x, '__len__'):
+    if not hasattr(x, "__len__"):
         return str(x)
     if len(x) == 0:
         return ""
@@ -40,41 +43,50 @@ def get_ticker_universe(config: PolygonConfig, fetch_missing: bool = False):
         )
     if not os.path.exists(tickers_csv_path):
         merged_tickers = pd.read_parquet(parquet_path)
-        merged_tickers['name'] = merged_tickers['name'].apply(list_to_string)
-        merged_tickers['share_class_figi'] = merged_tickers['share_class_figi'].apply(list_to_string)
-        merged_tickers['delisted_utc'] = merged_tickers['delisted_utc'].apply(list_to_string)
-        merged_tickers['currency_name'] = merged_tickers['currency_name'].apply(list_to_string)
-        merged_tickers['locale'] = merged_tickers['locale'].apply(list_to_string)
-        merged_tickers['market'] = merged_tickers['market'].apply(list_to_string)
-        merged_tickers.to_csv(tickers_csv_path, escapechar="\\", quoting=csv.QUOTE_NONNUMERIC)
+        merged_tickers["name"] = merged_tickers["name"].apply(list_to_string)
+        merged_tickers["share_class_figi"] = merged_tickers["share_class_figi"].apply(
+            list_to_string
+        )
+        merged_tickers["delisted_utc"] = merged_tickers["delisted_utc"].apply(
+            list_to_string
+        )
+        merged_tickers["currency_name"] = merged_tickers["currency_name"].apply(
+            list_to_string
+        )
+        merged_tickers["locale"] = merged_tickers["locale"].apply(list_to_string)
+        merged_tickers["market"] = merged_tickers["market"].apply(list_to_string)
+        merged_tickers.to_csv(
+            tickers_csv_path, escapechar="\\", quoting=csv.QUOTE_NONNUMERIC
+        )
         print(f"Saved {len(merged_tickers)} tickers to {tickers_csv_path}")
 
-    merged_tickers = pd.read_csv(
-        tickers_csv_path,
-        escapechar="\\",
-        quoting=csv.QUOTE_NONNUMERIC,
-        dtype={
-            "ticker": str,
-            "primary_exchange": str,
-            "cik": str,
-            "type": str,
-            "share_class_figi": str,
-        },
-        # converters={
-        #     "ticker": lambda x: str(x),
-        #     "start_date": lambda x: pd.to_datetime(x),
-        #     "cik": lambda x: str(x) if x else None,
-        #     "name": lambda x: str(x),
-        #     "end_date": lambda x: pd.to_datetime(x),
-        #     "composite_figi": lambda x: str(x).upper(),
-        #     "share_class_figi": lambda x: str(x).upper(),
-        #     "currency_name": lambda x: str(x).lower(),
-        #     "locale": lambda x: str(x).lower(),
-        #     "market": lambda x: str(x).lower(),
-        #     "primary_exchange": lambda x: str(x).strip().upper(),
-        #     "type": lambda x: str(x).upper(),
-        # },
-    )
+    # merged_tickers = pd.read_csv(
+    #     tickers_csv_path,
+    #     escapechar="\\",
+    #     quoting=csv.QUOTE_NONNUMERIC,
+    #     dtype={
+    #         "ticker": str,
+    #         "primary_exchange": str,
+    #         "cik": str,
+    #         "type": str,
+    #         "share_class_figi": str,
+    #     },
+    #     # converters={
+    #     #     "ticker": lambda x: str(x),
+    #     #     "start_date": lambda x: pd.to_datetime(x),
+    #     #     "cik": lambda x: str(x) if x else None,
+    #     #     "name": lambda x: str(x),
+    #     #     "end_date": lambda x: pd.to_datetime(x),
+    #     #     "composite_figi": lambda x: str(x).upper(),
+    #     #     "share_class_figi": lambda x: str(x).upper(),
+    #     #     "currency_name": lambda x: str(x).lower(),
+    #     #     "locale": lambda x: str(x).lower(),
+    #     #     "market": lambda x: str(x).lower(),
+    #     #     "primary_exchange": lambda x: str(x).strip().upper(),
+    #     #     "type": lambda x: str(x).upper(),
+    #     # },
+    # )
+    merged_tickers = pd.read_parquet(parquet_path)
     merged_tickers.info()
     return merged_tickers
 
@@ -85,74 +97,70 @@ def polygon_equities_bundle(
     minute_bar_writer,
     daily_bar_writer,
     adjustment_writer,
-    calendar_name,
+    calendar,
     start_session,
     end_session,
     cache,
     show_progress,
     output_dir,
 ):
-    config = PolygonConfig(environ=environ, calendar_name=calendar_name)
-    if config.api_key is None:
-        raise ValueError(
-            "Please set your POLYGON_API_KEY environment variable and retry."
-        )
+    config = PolygonConfig(environ=environ, calendar_name=calendar.name, start_session=start_session, end_session=end_session)
+    assert calendar == config.calendar
 
-    raw_data = fetch_data_table(
-        api_key, show_progress, environ.get("QUANDL_DOWNLOAD_ATTEMPTS", 5)
+    # Empty DataFrames for dividends, splits, and metadata
+    divs = pd.DataFrame(
+        columns=["sid", "amount", "ex_date", "record_date", "declared_date", "pay_date"]
     )
-    asset_metadata = gen_asset_metadata(raw_data[["symbol", "date"]], show_progress)
-
-    exchanges = pd.DataFrame(
-        data=[["SIP", "SIP", "US"]],
-        columns=["exchange", "canonical_name", "country_code"],
+    splits = pd.DataFrame(columns=["sid", "ratio", "effective_date"])
+    metadata = pd.DataFrame(
+        columns=("start_date", "end_date", "auto_close_date", "symbol", "exchange")
     )
-    asset_db_writer.write(equities=asset_metadata, exchanges=exchanges)
 
-    symbol_map = asset_metadata.symbol
+    if not os.path.exists(config.by_ticker_hive_dir):
+        concat_all_aggs_from_csv(config)
+
+    aggregates = pyarrow.dataset.dataset(config.by_ticker_hive_dir)
+
+    # Check valid trading dates, according to the selected exchange calendar
     sessions = calendar.sessions_in_range(start_session, end_session)
+    # sessions = calendar.sessions_in_range('1995-05-02', '2020-05-27')
 
-    raw_data.set_index(["date", "symbol"], inplace=True)
-    daily_bar_writer.write(
-        parse_pricing_and_vol(raw_data, sessions, symbol_map),
-        show_progress=show_progress,
-    )
+    # Get data for all stocks and write to Zipline
+    daily_bar_writer.write(process_aggregates(aggregates, sessions, metadata))
 
-    raw_data.reset_index(inplace=True)
-    raw_data["symbol"] = raw_data["symbol"].astype("category")
-    raw_data["sid"] = raw_data.symbol.cat.codes
-    adjustment_writer.write(
-        splits=parse_splits(
-            raw_data[
-                [
-                    "sid",
-                    "date",
-                    "split_ratio",
-                ]
-            ].loc[raw_data.split_ratio != 1],
-            show_progress=show_progress,
-        ),
-        dividends=parse_dividends(
-            raw_data[
-                [
-                    "sid",
-                    "date",
-                    "ex_dividend",
-                ]
-            ].loc[raw_data.ex_dividend != 0],
-            show_progress=show_progress,
-        ),
-    )
+    # Write the metadata
+    asset_db_writer.write(equities=metadata)
+
+    # Write splits and dividends
+    adjustment_writer.write(splits=splits, dividends=divs)
+
+
+def process_aggregates(aggregates, sessions, metadata):
+    # yield sid, df
+    table = aggregates.to_table()
+    # print(f"{table=}")
+    table = table.rename_columns({'ticker': 'symbol', 'window_start': 'day'})
+    symbols = sorted(list(set(table.column("symbol").to_pylist())))
+    print(f"{len(symbols)=}")
+    print(f"{symbols[0:10]=}")
+    for sid, symbol in enumerate(symbols):
+        print(f"{sid=}, {symbol=}")
+
+        df = table.filter(pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)).to_pandas()
+        df = df.set_index("day")
+        yield sid, df
+    return
 
 
 def register_polygon_equities_bundle(
     bundlename,
-    start_session="2000-01-01",
-    end_session="now",
-    calendar_name="XYNS",
-    ticker_list=None,
-    watchlists=None,
-    include_asset_types=None,
+    start_session=pd.Timestamp("2023-01-03"),
+    # end_session="now",
+    end_session=pd.Timestamp("2023-12-28"),
+    calendar_name="XNYS",
+    # ticker_list=None,
+    # watchlists=None,
+    # include_asset_types=None,
 ):
     register(
         bundlename,
@@ -160,19 +168,22 @@ def register_polygon_equities_bundle(
         start_session=start_session,
         end_session=end_session,
         calendar_name=calendar_name,
+        # minutes_per_day=390,
+        # create_writers=True,
     )
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.WARNING)
-    config = PolygonConfig(
-        environ=os.environ,
-        calendar_name="XNYS",
-        start_session="2003-10-01",
-        # start_session="2018-01-01",
-        # start_session="2023-01-01",
-        # end_session="2023-01-12",
-        # end_session="2023-12-31",
-        end_session="2024-06-30",
-    )
-    print(f"{get_ticker_universe(config, fetch_missing=True)}")
+# if __name__ == "__main__":
+#     logging.basicConfig(level=logging.WARNING)
+#     os.environ["POLYGON_MIRROR_DIR"] = "/Volumes/Oahu/Mirror/files.polygon.io"
+#     config = PolygonConfig(
+#         environ=os.environ,
+#         calendar_name="XNYS",
+#         # start_session="2003-10-01",
+#         # start_session="2018-01-01",
+#         start_session="2023-01-01",
+#         # end_session="2023-01-12",
+#         end_session="2023-12-31",
+#         # end_session="2024-06-30",
+#     )
+#     print(f"{get_ticker_universe(config, fetch_missing=True)}")
