@@ -1,9 +1,8 @@
 import os
 import glob
-import pandas as pd
 from concurrent.futures import ProcessPoolExecutor
 from config import PolygonConfig
-import fastparquet as fp
+from pyarrow import csv
 
 
 def convert_timestamp(x):
