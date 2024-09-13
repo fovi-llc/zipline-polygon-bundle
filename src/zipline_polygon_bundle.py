@@ -104,7 +104,12 @@ def polygon_equities_bundle(
     show_progress,
     output_dir,
 ):
-    config = PolygonConfig(environ=environ, calendar_name=calendar.name, start_session=start_session, end_session=end_session)
+    config = PolygonConfig(
+        environ=environ,
+        calendar_name=calendar.name,
+        start_session=start_session,
+        end_session=end_session,
+    )
     assert calendar == config.calendar
 
     # Empty DataFrames for dividends, splits, and metadata
@@ -113,7 +118,14 @@ def polygon_equities_bundle(
     )
     splits = pd.DataFrame(columns=["sid", "ratio", "effective_date"])
     metadata = pd.DataFrame(
-        columns=("start_date", "end_date", "auto_close_date", "symbol", "exchange", "asset_name")
+        columns=(
+            "start_date",
+            "end_date",
+            "auto_close_date",
+            "symbol",
+            "exchange",
+            "asset_name",
+        )
     )
 
     if not os.path.exists(config.by_ticker_hive_dir):
@@ -121,11 +133,27 @@ def polygon_equities_bundle(
 
     aggregates = pyarrow.dataset.dataset(config.by_ticker_hive_dir)
 
-    # Check valid trading dates, according to the selected exchange calendar
-    sessions = calendar.sessions_in_range(start_session, end_session)
-
     # Get data for all stocks and write to Zipline
-    daily_bar_writer.write(process_aggregates(aggregates, sessions, metadata, calendar), show_progress=show_progress)
+    if config.agg_time == "day":
+        daily_bar_writer.write(
+            process_day_aggregates(
+                aggregates,
+                calendar.sessions_in_range(start_session, end_session),
+                metadata,
+                calendar,
+            ),
+            show_progress=show_progress,
+        )
+    else:
+        minute_bar_writer.write(
+            process_minute_aggregates(
+                aggregates,
+                calendar.sessions_minutes(start_session, end_session),
+                metadata,
+                calendar,
+            ),
+            show_progress=show_progress,
+        )
 
     # Write the metadata
     asset_db_writer.write(equities=metadata)
@@ -138,13 +166,15 @@ def symbol_to_upper(s: str) -> str:
     return "".join(map(lambda c: ("^" + c.upper()) if c.islower() else c, s))
 
 
-def process_aggregates(aggregates, sessions, metadata, calendar):
+def process_day_aggregates(aggregates, sessions, metadata, calendar):
     table = aggregates.to_table()
-    table = table.rename_columns({'ticker': 'symbol', 'window_start': 'day'})
+    table = table.rename_columns({"ticker": "symbol", "window_start": "day"})
     table = table.sort_by([("symbol", "ascending")])
     symbols = sorted(set(table.column("symbol").to_pylist()))
     for sid, symbol in enumerate(symbols):
-        df = table.filter(pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)).to_pandas()
+        df = table.filter(
+            pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)
+        ).to_pandas()
         df["day"] = pd.to_datetime(df["day"].dt.date)
         df = df.set_index("day")
         # The SQL schema zipline uses for symbols ignores case
@@ -154,6 +184,9 @@ def process_aggregates(aggregates, sessions, metadata, calendar):
         df = df[~df.index.duplicated()]
         # Take days as per calendar
         df = df[df.index.isin(sessions)]
+        if len(df) < 2:
+            print(f"WARNING: Not enough data for {symbol}")
+            continue
         # Check first and last date.
         start_date = df.index[0]
         end_date = df.index[-1]
@@ -176,8 +209,79 @@ def process_aggregates(aggregates, sessions, metadata, calendar):
         ac_date = end_date + pd.Timedelta(days=1)
 
         # Add a row to the metadata DataFrame. Don't forget to add an exchange field.
-        metadata.loc[sid] = start_date, end_date, ac_date, symbol_to_upper(symbol), calendar.name, symbol
-        yield sid, df
+        metadata.loc[sid] = (
+            start_date,
+            end_date,
+            ac_date,
+            symbol_to_upper(symbol),
+            calendar.name,
+            symbol,
+        )
+        if len(df) > 1:
+            yield sid, df
+        else:
+            print(f"WARNING: Not enough data post reindex for {symbol}")
+    return
+
+
+def process_minute_aggregates(aggregates, sessions, metadata, calendar):
+    table = aggregates.to_table()
+    table = table.rename_columns({"ticker": "symbol", "window_start": "timestamp"})
+    table = table.sort_by([("symbol", "ascending")])
+    symbols = sorted(set(table.column("symbol").to_pylist()))
+    for sid, symbol in enumerate(symbols):
+        df = table.filter(
+            pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)
+        ).to_pandas()
+        # df["day"] = pd.to_datetime(df["day"].dt.date)
+        df = df.set_index("timestamp")
+        # The SQL schema zipline uses for symbols ignores case
+        if not symbol.isupper():
+            df["symbol"] = symbol_to_upper(symbol)
+        df.info()
+        # Remove duplicates
+        df = df[~df.index.duplicated()]
+        # Take days as per calendar
+        df = df[df.index.isin(sessions)]
+        if len(df) < 2:
+            print(f"WARNING: Not enough data for {symbol}")
+            continue
+        # Check first and last date.
+        start_date = df.index[0].date()
+        end_date = df.index[-1].date()
+        # Synch to the official exchange calendar
+        df = df.reindex(sessions.tz_localize(None))[
+            start_date:end_date
+        ]  # tz_localize(None)
+        # Missing volume and transactions are zero
+        df["volume"] = df["volume"].fillna(0)
+        df["transactions"] = df["transactions"].fillna(0)
+        # Forward fill missing price data (better than backfill)
+        df.ffill(inplace=True)
+        # Back fill missing data (maybe necessary for the first day)
+        df.bfill(inplace=True)
+        # There should be no missing data
+        if df.isnull().sum().sum() > 0:
+            print(f"WARNING: Missing data for {symbol}")
+
+        # The auto_close date is the day after the last trade.
+        ac_date = end_date + pd.Timedelta(days=1)
+
+        # Add a row to the metadata DataFrame. Don't forget to add an exchange field.
+        metadata.loc[sid] = (
+            start_date,
+            end_date,
+            ac_date,
+            symbol_to_upper(symbol),
+            calendar.name,
+            symbol,
+        )
+        # A df with 1 bar crashes zipline/data/bcolz_minute_bars.py", line 747
+        # pd.Timestamp(dts[0]), direction="previous"
+        if len(df) > 1:
+            yield sid, df
+        else:
+            print(f"WARNING: Not enough data post reindex for {symbol}")
     return
 
 
