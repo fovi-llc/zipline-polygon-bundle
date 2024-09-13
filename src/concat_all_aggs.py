@@ -16,6 +16,8 @@ import pandas as pd
 def csv_agg_scanner(
     paths: list,
     schema: pa.Schema,
+    start_timestamp: pd.Timestamp,
+    limit_timestamp: pd.Timestamp,
 ) -> Iterator[pa.RecordBatch]:
     empty_table = schema.empty_table()
     # TODO: Find which column(s) need to be cast to int64 from the schema.
@@ -42,11 +44,11 @@ def csv_agg_scanner(
         )
         expr = (
             pa.compute.field("window_start")
-            >= pa.scalar(config.start_timestamp, type=schema.field("window_start").type)
+            >= pa.scalar(start_timestamp, type=schema.field("window_start").type)
         ) & (
             pa.compute.field("window_start")
             < pa.scalar(
-                config.end_timestamp + pd.to_timedelta(1, unit="day"),
+                limit_timestamp,
                 type=schema.field("window_start").type,
             )
         )
@@ -78,7 +80,9 @@ def concat_all_aggs_from_csv(
             print(f"Removing {config.by_ticker_hive_dir=}")
             shutil.rmtree(config.by_ticker_hive_dir)
         else:
-            raise FileExistsError(f"{config.by_ticker_hive_dir=} exists and overwrite is False.")
+            raise FileExistsError(
+                f"{config.by_ticker_hive_dir=} exists and overwrite is False."
+            )
 
     # We sort by path because they have the year and month in the dir names and the date in the filename.
     paths = sorted(
@@ -121,7 +125,12 @@ def concat_all_aggs_from_csv(
     )
 
     agg_scanner = pa_ds.Scanner.from_batches(
-        csv_agg_scanner(paths=paths, schema=polygon_aggs_schema),
+        csv_agg_scanner(
+            paths=paths,
+            schema=polygon_aggs_schema,
+            start_timestamp=config.start_timestamp,
+            limit_timestamp=config.end_timestamp + pd.to_timedelta(1, unit="day"),
+        ),
         schema=polygon_aggs_schema,
     )
 
@@ -142,14 +151,15 @@ if __name__ == "__main__":
     parser.add_argument("--end_session", default="2024-09-06")
     # parser.add_argument("--start_session", default="2020-01-01")
     # parser.add_argument("--end_session", default="2020-12-31")
-    # parser.add_argument("--aggs_pattern", default="2020/10/**/*.csv.gz")
-    parser.add_argument("--aggs_pattern", default="**/*.csv.gz")
+
+    parser.add_argument("--agg_time", default="day")
 
     parser.add_argument("--overwrite", action="store_true")
 
     # TODO: These defaults should be None but for dev convenience they are set for my local config.
-    parser.add_argument("--agg_time", default="day")
     parser.add_argument("--data_dir", default="/Volumes/Oahu/Mirror/files.polygon.io")
+    parser.add_argument("--aggs_pattern", default="**/*.csv.gz")
+    # parser.add_argument("--aggs_pattern", default="2020/10/**/*.csv.gz")
 
     args = parser.parse_args()
 
