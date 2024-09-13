@@ -113,7 +113,7 @@ def polygon_equities_bundle(
     )
     splits = pd.DataFrame(columns=["sid", "ratio", "effective_date"])
     metadata = pd.DataFrame(
-        columns=("start_date", "end_date", "auto_close_date", "symbol", "exchange")
+        columns=("start_date", "end_date", "auto_close_date", "symbol", "exchange", "asset_name")
     )
 
     if not os.path.exists(config.by_ticker_hive_dir):
@@ -126,7 +126,7 @@ def polygon_equities_bundle(
     # sessions = calendar.sessions_in_range('1995-05-02', '2020-05-27')
 
     # Get data for all stocks and write to Zipline
-    daily_bar_writer.write(process_aggregates(aggregates, sessions, metadata))
+    daily_bar_writer.write(process_aggregates(aggregates, sessions, metadata, calendar))
 
     # Write the metadata
     asset_db_writer.write(equities=metadata)
@@ -135,19 +135,51 @@ def polygon_equities_bundle(
     adjustment_writer.write(splits=splits, dividends=divs)
 
 
-def process_aggregates(aggregates, sessions, metadata):
-    # yield sid, df
-    table = aggregates.to_table()
-    # print(f"{table=}")
-    table = table.rename_columns({'ticker': 'symbol', 'window_start': 'day'})
-    symbols = sorted(list(set(table.column("symbol").to_pylist())))
-    print(f"{len(symbols)=}")
-    print(f"{symbols[0:10]=}")
-    for sid, symbol in enumerate(symbols):
-        print(f"{sid=}, {symbol=}")
+def symbol_to_upper(s: str) -> str:
+    return "".join(
+        [f"{("^" + c.upper()) if c.lower() else c}" for c in s]
+    )
 
+
+def process_aggregates(aggregates, sessions, metadata, calendar):
+    table = aggregates.to_table()
+    table = table.rename_columns({'ticker': 'symbol', 'window_start': 'day'})
+    table = table.sort_by([("symbol", "ascending")])
+    symbols = sorted(set(table.column("symbol").to_pylist()))
+    for sid, symbol in enumerate(symbols):
         df = table.filter(pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)).to_pandas()
+        df["day"] = pd.to_datetime(df["day"].dt.date)
         df = df.set_index("day")
+        # The SQL schema zipline uses for symbols ignores case
+        if not symbol.isupper():
+            df["symbol"] = symbol_to_upper(symbol)
+        # Remove duplicates
+        df = df[~df.index.duplicated()]
+        # Take days as per calendar
+        df = df[df.index.isin(sessions)]
+        # Check first and last date.
+        start_date = df.index[0]
+        end_date = df.index[-1]
+        # Synch to the official exchange calendar
+        df = df.reindex(sessions.tz_localize(None))[
+            start_date:end_date
+        ]  # tz_localize(None)
+        # Missing volume and transactions are zero
+        df["volume"] = df["volume"].fillna(0)
+        df["transactions"] = df["transactions"].fillna(0)
+        # Forward fill missing price data (better than backfill)
+        df.ffill(inplace=True)
+        # Back fill missing data (maybe necessary for the first day)
+        df.bfill(inplace=True)
+        # There should be no missing data
+        if df.isnull().sum().sum() > 0:
+            print(f"Missing data for {symbol}")
+
+        # The auto_close date is the day after the last trade.
+        ac_date = end_date + pd.Timedelta(days=1)
+
+        # Add a row to the metadata DataFrame. Don't forget to add an exchange field.
+        metadata.loc[sid] = start_date, end_date, ac_date, symbol_to_upper(symbol), calendar.name, symbol
         yield sid, df
     return
 
