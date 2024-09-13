@@ -109,7 +109,9 @@ def concat_all_aggs_from_csv(
     # Also I don't think you can use those in a format string without a separator.
 
     # Polygon price scale is 4 decimal places (i.e. hundredths of a penny), but we'll use 10 because we have precision to spare.
-    price_type = pa.decimal128(precision=38, scale=10)
+    # price_type = pa.decimal128(precision=38, scale=10)
+    # 64bit float a little overkill but avoids any plausible truncation error.
+    price_type = pa.float64()
 
     polygon_aggs_schema = pa.schema(
         [

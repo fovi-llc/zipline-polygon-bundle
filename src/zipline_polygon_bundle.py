@@ -185,8 +185,9 @@ def process_day_aggregates(aggregates, sessions, metadata, calendar):
         # Take days as per calendar
         df = df[df.index.isin(sessions)]
         if len(df) < 2:
-            print(f"WARNING: Not enough data for {symbol}")
-            continue
+            print(f" WARNING: Not enough data for {symbol}")
+            # day_writer apparently is okay with these, just minute_writer barfs.
+            # continue
         # Check first and last date.
         start_date = df.index[0]
         end_date = df.index[-1]
@@ -203,7 +204,7 @@ def process_day_aggregates(aggregates, sessions, metadata, calendar):
         df.bfill(inplace=True)
         # There should be no missing data
         if df.isnull().sum().sum() > 0:
-            print(f"WARNING: Missing data for {symbol}")
+            print(f" WARNING: Missing data for {symbol}")
 
         # The auto_close date is the day after the last trade.
         ac_date = end_date + pd.Timedelta(days=1)
@@ -217,10 +218,7 @@ def process_day_aggregates(aggregates, sessions, metadata, calendar):
             calendar.name,
             symbol,
         )
-        if len(df) > 1:
-            yield sid, df
-        else:
-            print(f"WARNING: Not enough data post reindex for {symbol}")
+        yield sid, df
     return
 
 
@@ -262,7 +260,7 @@ def process_minute_aggregates(aggregates, sessions, metadata, calendar):
         df.bfill(inplace=True)
         # There should be no missing data
         if df.isnull().sum().sum() > 0:
-            print(f"WARNING: Missing data for {symbol}")
+            print(f" WARNING: Missing data for {symbol}")
 
         # The auto_close date is the day after the last trade.
         ac_date = end_date + pd.Timedelta(days=1)
@@ -281,7 +279,7 @@ def process_minute_aggregates(aggregates, sessions, metadata, calendar):
         if len(df) > 1:
             yield sid, df
         else:
-            print(f"WARNING: Not enough data post reindex for {symbol}")
+            print(f" WARNING: Not enough data post reindex for {symbol}")
     return
 
 
