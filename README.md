@@ -15,7 +15,11 @@ pip install -e .
 # Download Polygon flatfiles.  See download_flat_files.sh for how.
 # Concatenate daily CSV files into Arrow Hive dataset.
 python -m zipline_polygon_bundle concat_all_aggs.py
-cp extension.py ~/.zipline
-zipline ingest -b polygon
+# Edit the extension.py to set your start/end session and calendar.
+# Install the extension:
+# cp extension.py ~/.zipline
+# zipline ingest -b polygon
+# or just use it from command (you don't need it except to ingest):
+zipline -e extension.py ingest -b polygon
 ```
 

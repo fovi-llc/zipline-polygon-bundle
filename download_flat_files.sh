@@ -45,7 +45,7 @@ mkdir -p $POLYGON_DATA_DIR
 cp -r /Users/jim/Projects/zipline-polygon-bundle/data/polygon/flatfiles $POLYGON_DATA_DIR
 
 
-for year in 2016 2017 2018 2019 2020 2021 2022 2023 2024; do \
+for year in 2014 2015 2016 2017 2018 2019 2020 2021 2022 2023 2024; do \
     rclone copy -P s3polygon:flatfiles/us_stocks_sip/day_aggs_v1/$year \
     $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/day_aggs_v1/$year; \
     rclone copy -P s3polygon:flatfiles/us_stocks_sip/minute_aggs_v1/$year \
