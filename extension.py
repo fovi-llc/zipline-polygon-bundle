@@ -1,2 +1,3 @@
-from zipline.data.bundles import register
+from zipline_polygon_bundle import register_polygon_equities_bundle
 
+register_polygon_equities_bundle("polygon")

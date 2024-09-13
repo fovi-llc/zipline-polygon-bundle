@@ -55,11 +55,15 @@ done
 
 
 for year in 2016 2017 2018 2019 2020 2021 2022 2023 2024; do \
-    rclone copy -P s3polygon:flatfiles/us_stocks_sip/trades_v1/$year \
+    rclone copy -cP s3polygon:flatfiles/us_stocks_sip/trades_v1/$year \
     $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/trades_v1/$year; \
 done
 
-rclone copy -P  s3polygon:flatfiles/us_stocks_sip/trades_v1/2020 \
+rclone copy --check-first --checksum --immutable -P \
+    s3polygon:flatfiles/us_stocks_sip/trades_v1/$POLYGON_YEAR $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/trades_v1/$POLYGON_YEAR
+
+# For large files need to specify --checksum.  Otherwise they will be copied every time.
+rclone copy --check-first --checksum --progress s3polygon:flatfiles/us_stocks_sip/trades_v1/2020 \
     $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/trades_v1/2020;
 
 
