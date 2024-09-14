@@ -168,14 +168,13 @@ if __name__ == "__main__":
     # Maybe the way to do this is to use the os.environ as the argparser defaults.
     if args.data_dir:
         os.environ["POLYGON_DATA_DIR"] = args.data_dir
-    if args.agg_time:
-        os.environ["POLYGON_AGG_TIME"] = args.agg_time
 
     config = PolygonConfig(
         environ=os.environ,
         calendar_name=args.calendar_name,
         start_session=args.start_session,
         end_session=args.end_session,
+        agg_time=args.agg_time,
     )
 
     concat_all_aggs_from_csv(

@@ -91,7 +91,7 @@ def get_ticker_universe(config: PolygonConfig, fetch_missing: bool = False):
     return merged_tickers
 
 
-def polygon_equities_bundle(
+def polygon_equities_bundle_day(
     environ,
     asset_db_writer,
     minute_bar_writer,
@@ -109,7 +109,70 @@ def polygon_equities_bundle(
         calendar_name=calendar.name,
         start_session=start_session,
         end_session=end_session,
+        agg_time="day",
     )
+    return polygon_equities_bundle(
+        config,
+        asset_db_writer,
+        minute_bar_writer,
+        daily_bar_writer,
+        adjustment_writer,
+        calendar,
+        start_session,
+        end_session,
+        cache,
+        show_progress,
+        output_dir,
+    )
+
+
+def polygon_equities_bundle_minute(
+    environ,
+    asset_db_writer,
+    minute_bar_writer,
+    daily_bar_writer,
+    adjustment_writer,
+    calendar,
+    start_session,
+    end_session,
+    cache,
+    show_progress,
+    output_dir,
+):
+    config = PolygonConfig(
+        environ=environ,
+        calendar_name=calendar.name,
+        start_session=start_session,
+        end_session=end_session,
+        agg_time="minute",
+    )
+    return polygon_equities_bundle(
+        config,
+        asset_db_writer,
+        minute_bar_writer,
+        daily_bar_writer,
+        adjustment_writer,
+        calendar,
+        start_session,
+        end_session,
+        cache,
+        show_progress,
+        output_dir,
+    )
+
+def polygon_equities_bundle(
+    config: PolygonConfig,
+    asset_db_writer,
+    minute_bar_writer,
+    daily_bar_writer,
+    adjustment_writer,
+    calendar,
+    start_session,
+    end_session,
+    cache,
+    show_progress,
+    output_dir,
+):
     assert calendar == config.calendar
 
     # Empty DataFrames for dividends, splits, and metadata
@@ -288,13 +351,16 @@ def register_polygon_equities_bundle(
     start_session=None,
     end_session="now",
     calendar_name="XNYS",
+    agg_time="day",
     # ticker_list=None,
     # watchlists=None,
     # include_asset_types=None,
 ):
+    if agg_time not in ["day", "minute"]:
+        raise ValueError(f"agg_time must be 'day' or 'minute', not {agg_time}")
     register(
         bundlename,
-        polygon_equities_bundle,
+        polygon_equities_bundle_minute if agg_time == "minute" else polygon_equities_bundle_day,
         start_session=start_session,
         end_session=end_session,
         calendar_name=calendar_name,

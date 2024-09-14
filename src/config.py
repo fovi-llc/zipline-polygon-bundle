@@ -6,7 +6,9 @@ import pandas as pd
 
 
 class PolygonConfig:
-    def __init__(self, environ: dict, calendar_name: str, start_session: Date, end_session: Date):
+    def __init__(self, environ: dict, calendar_name: str, start_session: Date, end_session: Date, agg_time: str = "day"):
+        if agg_time not in ["minute", "day"]:
+            raise ValueError(f"agg_time must be 'minute' or 'day', got '{agg_time}'")
         self.calendar_name = calendar_name
         self.start_timestamp = (
             parse_date(start_session, calendar=self.calendar)
@@ -42,8 +44,7 @@ class PolygonConfig:
         self.flat_files_dir = environ.get(
             "POLYGON_FLAT_FILES_DIR", os.path.join(self.data_dir, "flatfiles")
         )
-        self.agg_time = environ.get("POLYGON_AGG_TIME", "day")
-        assert self.agg_time in ["minute", "day"]
+        self.agg_time = agg_time
         self.asset_files_dir = os.path.join(self.flat_files_dir, self.asset_subdir)
         self.minute_aggs_dir = os.path.join(self.asset_files_dir, "minute_aggs_v1")
         self.day_aggs_dir = os.path.join(self.asset_files_dir, "day_aggs_v1")
