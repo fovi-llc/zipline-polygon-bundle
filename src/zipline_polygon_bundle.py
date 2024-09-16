@@ -195,7 +195,7 @@ def load_splits(config: PolygonConfig, ticker_to_sid: dict[str, int]) -> pd.Data
     # Not only do we want a float for ratio but some to/from are not integers.
     splits["split_from"] = splits["split_from"].astype(float)
     splits["split_to"] = splits["split_to"].astype(float)
-    splits["ratio"] = splits["split_to"] / splits["split_from"]
+    splits["ratio"] =  splits["split_from"] / splits["split_to"]
     splits.drop(columns=["ticker", "split_from", "split_to"], inplace=True)
     splits.info()
     return splits
@@ -220,18 +220,6 @@ def load_polygon_dividends(config: PolygonConfig) -> pd.DataFrame:
     if len(dividends) <= 10000:
         logging.error(f"Only found {len(dividends)=} at {dividends_path}")
     return dividends
-
-
-# class Dividend:
-#     cash_amount: Optional[float] = None
-#     currency: Optional[str] = None
-#     declaration_date: Optional[str] = None
-#     dividend_type: Optional[str] = None
-#     ex_dividend_date: Optional[str] = None
-#     frequency: Optional[int] = None
-#     pay_date: Optional[str] = None
-#     record_date: Optional[str] = None
-#     ticker: Optional[str] = None
 
 
 def load_dividends(
