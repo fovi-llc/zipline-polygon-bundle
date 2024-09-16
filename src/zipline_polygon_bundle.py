@@ -189,10 +189,15 @@ def load_splits(config: PolygonConfig, ticker_to_sid: dict[str, int]) -> pd.Data
     splits = load_polygon_splits(config)
     splits["sid"] = splits["ticker"].apply(lambda x: ticker_to_sid.get(x, pd.NA))
     splits.dropna(inplace=True)
-    splits["effective_date"] = pd.to_datetime(splits["effective_date"])
+    splits["sid"] = splits["sid"].astype('int64')
+    splits["execution_date"] = pd.to_datetime(splits["execution_date"])
+    splits.rename(columns={"execution_date": "effective_date"}, inplace=True)
     # Not only do we want a float for ratio but some to/from are not integers.
-    splits["ratio"] = float(splits["split_to"]) / float(splits["split_from"])
+    splits["split_from"] = splits["split_from"].astype(float)
+    splits["split_to"] = splits["split_to"].astype(float)
+    splits["ratio"] = splits["split_to"] / splits["split_from"]
     splits.drop(columns=["ticker", "split_from", "split_to"], inplace=True)
+    splits.info()
     return splits
 
 
@@ -234,19 +239,24 @@ def load_dividends(
 ) -> pd.DataFrame:
     dividends = load_polygon_dividends(config)
     dividends["sid"] = dividends["ticker"].apply(lambda x: ticker_to_sid.get(x, pd.NA))
-    dividends.dropna("sid", inplace=True)
+    dividends.dropna(how="any", inplace=True)
+    dividends["sid"] = dividends["sid"].astype('int64')
     dividends["declaration_date"] = pd.to_datetime(dividends["declaration_date"])
-    dividends["ex_date"] = pd.to_datetime(dividends["ex_date"])
+    dividends["ex_dividend_date"] = pd.to_datetime(dividends["ex_dividend_date"])
+    dividends["record_date"] = pd.to_datetime(dividends["record_date"])
     dividends["pay_date"] = pd.to_datetime(dividends["pay_date"])
     dividends.rename(
-        {
+        columns={
             "cash_amount": "amount",
             "declaration_date": "declared_date",
             "ex_dividend_date": "ex_date",
         },
         inplace=True,
     )
-    dividends.drop(["ticker", "frequency", "currency", "dividend_type"], inplace=True)
+    dividends.drop(
+        columns=["ticker", "frequency", "currency", "dividend_type"], inplace=True
+    )
+    dividends.info()
     return dividends
 
 
@@ -322,12 +332,15 @@ def symbol_to_upper(s: str) -> str:
     return "".join(map(lambda c: ("^" + c.upper()) if c.islower() else c, s))
 
 
-def process_day_aggregates(aggregates, sessions, metadata, calendar):
+def process_day_aggregates(
+    aggregates, sessions, metadata, calendar, ticker_to_sid: dict[str, int]
+):
     table = aggregates.to_table()
     table = table.rename_columns({"ticker": "symbol", "window_start": "day"})
     table = table.sort_by([("symbol", "ascending")])
     symbols = sorted(set(table.column("symbol").to_pylist()))
     for sid, symbol in enumerate(symbols):
+        ticker_to_sid[symbol] = sid
         df = table.filter(
             pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)
         ).to_pandas()
@@ -469,22 +482,33 @@ def register_polygon_equities_bundle(
     )
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.WARNING)
-    os.environ["POLYGON_MIRROR_DIR"] = "/Volumes/Oahu/Mirror/files.polygon.io"
-    config = PolygonConfig(
-        environ=os.environ,
-        calendar_name="XNYS",
-        # start_session="2003-10-01",
-        # start_session="2018-01-01",
-        start_session="2023-01-01",
-        # end_session="2023-01-12",
-        end_session="2023-12-31",
-        # end_session="2024-06-30",
-    )
-    splits = load_polygon_splits(config)
-    splits.info()
-    print(splits.head())
-    dividends = load_polygon_dividends(config)
-    dividends.info()
-    print(dividends.head())
+# if __name__ == "__main__":
+#     logging.basicConfig(level=logging.WARNING)
+#     os.environ["POLYGON_MIRROR_DIR"] = "/Volumes/Oahu/Mirror/files.polygon.io"
+#     config = PolygonConfig(
+#         environ=os.environ,
+#         calendar_name="XNYS",
+#         # start_session="2003-10-01",
+#         # start_session="2018-01-01",
+#         start_session="2023-01-01",
+#         # end_session="2023-01-12",
+#         end_session="2023-12-31",
+#         # end_session="2024-06-30",
+#     )
+#     splits = load_polygon_splits(config)
+#     splits.info()
+#     print(splits.head())
+#     dividends = load_polygon_dividends(config)
+#     dividends.info()
+#     print(dividends.head())
+#     tickers = set(
+#         splits["ticker"].unique().tolist() + dividends["ticker"].unique().tolist()
+#     )
+#     print(f"{len(tickers)=}")
+#     ticker_to_sid = {ticker: sid for sid, ticker in enumerate(tickers)}
+#     splits = load_splits(config, ticker_to_sid)
+#     splits.info()
+#     print(splits.head())
+#     dividends = load_dividends(config, ticker_to_sid)
+#     dividends.info()
+#     print(dividends.head())
