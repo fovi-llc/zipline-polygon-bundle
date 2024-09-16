@@ -1,4 +1,4 @@
-from exchange_calendars.calendar_helpers import Date, parse_date
+from exchange_calendars.calendar_helpers import Date, parse_date, parse_timestamp
 from zipline.utils.calendar_utils import get_calendar
 
 import os
@@ -6,7 +6,14 @@ import pandas as pd
 
 
 class PolygonConfig:
-    def __init__(self, environ: dict, calendar_name: str, start_session: Date, end_session: Date, agg_time: str = "day"):
+    def __init__(
+        self,
+        environ: dict,
+        calendar_name: str,
+        start_session: Date,
+        end_session: Date,
+        agg_time: str = "day",
+    ):
         if agg_time not in ["minute", "day"]:
             raise ValueError(f"agg_time must be 'minute' or 'day', got '{agg_time}'")
         self.calendar_name = calendar_name
@@ -66,6 +73,16 @@ class PolygonConfig:
             f"{self.agg_time}_{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.hive",
         )
 
+        self.cache_dir = os.path.join(self.asset_files_dir, "api_cache")
+        self.cache_today_dir = os.path.join(
+            self.cache_dir,
+            parse_timestamp("today", raise_oob=False, side="left", utc=False)
+            .date()
+            .isoformat(),
+        )
+        self.splits_parquet = os.path.join(self.cache_today_dir, "splits.parquet")
+        self.dividends_parquet = os.path.join(self.cache_today_dir, "dividends.parquet")
+
     @property
     def calendar(self):
         return get_calendar(self.calendar_name)
@@ -78,3 +95,8 @@ class PolygonConfig:
         return os.path.join(
             ticker_year_dir, f"tickers_{date.date().isoformat()}.parquet"
         )
+
+
+if __name__ == "__main__":
+    config = PolygonConfig(os.environ, "XNYS", "2003-10-01", "2023-01-01")
+    print(config.__dict__)

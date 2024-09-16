@@ -5,6 +5,9 @@ from config import PolygonConfig
 from tickers_and_names import PolygonAssets
 from concat_all_aggs import concat_all_aggs_from_csv
 
+import polygon
+from urllib3 import HTTPResponse
+
 import pyarrow
 import pandas as pd
 import csv
@@ -160,6 +163,93 @@ def polygon_equities_bundle_minute(
         output_dir,
     )
 
+
+def load_polygon_splits(config: PolygonConfig) -> pd.DataFrame:
+    splits_path = config.splits_parquet
+    if os.path.exists(splits_path):
+        splits = pd.read_parquet(splits_path)
+        if len(splits) > 10000:
+            return splits
+        logging.error(f"Only found {len(splits)=} at {splits_path}")
+
+    client = polygon.RESTClient(api_key=config.api_key)
+    splits = client.list_splits(limit=1000)
+    if splits is HTTPResponse:
+        logging.error(f"HTTPResponse from {splits}")
+        raise ValueError(f"HTTPResponse from {splits}")
+    splits = pd.DataFrame(splits)
+    os.makedirs(os.path.dirname(splits_path), exist_ok=True)
+    splits.to_parquet(splits_path)
+    if len(splits) <= 10000:
+        logging.error(f"Only found {len(splits)=} at {splits_path}")
+    return splits
+
+
+def load_splits(config: PolygonConfig, ticker_to_sid: dict[str, int]) -> pd.DataFrame:
+    splits = load_polygon_splits(config)
+    splits["sid"] = splits["ticker"].apply(lambda x: ticker_to_sid.get(x, pd.NA))
+    splits.dropna(inplace=True)
+    splits["effective_date"] = pd.to_datetime(splits["effective_date"])
+    # Not only do we want a float for ratio but some to/from are not integers.
+    splits["ratio"] = float(splits["split_to"]) / float(splits["split_from"])
+    splits.drop(columns=["ticker", "split_from", "split_to"], inplace=True)
+    return splits
+
+
+def load_polygon_dividends(config: PolygonConfig) -> pd.DataFrame:
+    dividends_path = config.dividends_parquet
+    if os.path.exists(dividends_path):
+        dividends = pd.read_parquet(dividends_path)
+        if len(dividends) > 10000:
+            return dividends
+        logging.error(f"Only found {len(dividends)=} at {dividends_path}")
+
+    client = polygon.RESTClient(api_key=config.api_key)
+    dividends = client.list_dividends(limit=1000)
+    if dividends is HTTPResponse:
+        logging.error(f"HTTPResponse from {dividends}")
+        raise ValueError(f"HTTPResponse from {dividends}")
+    dividends = pd.DataFrame(dividends)
+    os.makedirs(os.path.dirname(dividends_path), exist_ok=True)
+    dividends.to_parquet(dividends_path)
+    if len(dividends) <= 10000:
+        logging.error(f"Only found {len(dividends)=} at {dividends_path}")
+    return dividends
+
+
+# class Dividend:
+#     cash_amount: Optional[float] = None
+#     currency: Optional[str] = None
+#     declaration_date: Optional[str] = None
+#     dividend_type: Optional[str] = None
+#     ex_dividend_date: Optional[str] = None
+#     frequency: Optional[int] = None
+#     pay_date: Optional[str] = None
+#     record_date: Optional[str] = None
+#     ticker: Optional[str] = None
+
+
+def load_dividends(
+    config: PolygonConfig, ticker_to_sid: dict[str, int]
+) -> pd.DataFrame:
+    dividends = load_polygon_dividends(config)
+    dividends["sid"] = dividends["ticker"].apply(lambda x: ticker_to_sid.get(x, pd.NA))
+    dividends.dropna("sid", inplace=True)
+    dividends["declaration_date"] = pd.to_datetime(dividends["declaration_date"])
+    dividends["ex_date"] = pd.to_datetime(dividends["ex_date"])
+    dividends["pay_date"] = pd.to_datetime(dividends["pay_date"])
+    dividends.rename(
+        {
+            "cash_amount": "amount",
+            "declaration_date": "declared_date",
+            "ex_dividend_date": "ex_date",
+        },
+        inplace=True,
+    )
+    dividends.drop(["ticker", "frequency", "currency", "dividend_type"], inplace=True)
+    return dividends
+
+
 def polygon_equities_bundle(
     config: PolygonConfig,
     asset_db_writer,
@@ -175,11 +265,6 @@ def polygon_equities_bundle(
 ):
     assert calendar == config.calendar
 
-    # Empty DataFrames for dividends, splits, and metadata
-    divs = pd.DataFrame(
-        columns=["sid", "amount", "ex_date", "record_date", "declared_date", "pay_date"]
-    )
-    splits = pd.DataFrame(columns=["sid", "ratio", "effective_date"])
     metadata = pd.DataFrame(
         columns=(
             "start_date",
@@ -196,6 +281,8 @@ def polygon_equities_bundle(
 
     aggregates = pyarrow.dataset.dataset(config.by_ticker_hive_dir)
 
+    ticker_to_sid = {}
+
     # Get data for all stocks and write to Zipline
     if config.agg_time == "day":
         daily_bar_writer.write(
@@ -204,6 +291,7 @@ def polygon_equities_bundle(
                 calendar.sessions_in_range(start_session, end_session),
                 metadata,
                 calendar,
+                ticker_to_sid,
             ),
             show_progress=show_progress,
         )
@@ -214,6 +302,7 @@ def polygon_equities_bundle(
                 calendar.sessions_minutes(start_session, end_session),
                 metadata,
                 calendar,
+                ticker_to_sid,
             ),
             show_progress=show_progress,
         )
@@ -221,8 +310,12 @@ def polygon_equities_bundle(
     # Write the metadata
     asset_db_writer.write(equities=metadata)
 
+    # Load splits and dividends
+    splits = load_splits(config, ticker_to_sid)
+    dividends = load_dividends(config, ticker_to_sid)
+
     # Write splits and dividends
-    adjustment_writer.write(splits=splits, dividends=divs)
+    adjustment_writer.write(splits=splits, dividends=dividends)
 
 
 def symbol_to_upper(s: str) -> str:
@@ -285,12 +378,15 @@ def process_day_aggregates(aggregates, sessions, metadata, calendar):
     return
 
 
-def process_minute_aggregates(aggregates, sessions, metadata, calendar):
+def process_minute_aggregates(
+    aggregates, sessions, metadata, calendar, ticker_to_sid: dict[str, int]
+):
     table = aggregates.to_table()
     table = table.rename_columns({"ticker": "symbol", "window_start": "timestamp"})
     table = table.sort_by([("symbol", "ascending")])
     symbols = sorted(set(table.column("symbol").to_pylist()))
     for sid, symbol in enumerate(symbols):
+        ticker_to_sid[symbol] = sid
         df = table.filter(
             pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)
         ).to_pandas()
@@ -360,7 +456,11 @@ def register_polygon_equities_bundle(
         raise ValueError(f"agg_time must be 'day' or 'minute', not {agg_time}")
     register(
         bundlename,
-        polygon_equities_bundle_minute if agg_time == "minute" else polygon_equities_bundle_day,
+        (
+            polygon_equities_bundle_minute
+            if agg_time == "minute"
+            else polygon_equities_bundle_day
+        ),
         start_session=start_session,
         end_session=end_session,
         calendar_name=calendar_name,
@@ -369,17 +469,22 @@ def register_polygon_equities_bundle(
     )
 
 
-# if __name__ == "__main__":
-#     logging.basicConfig(level=logging.WARNING)
-#     os.environ["POLYGON_MIRROR_DIR"] = "/Volumes/Oahu/Mirror/files.polygon.io"
-#     config = PolygonConfig(
-#         environ=os.environ,
-#         calendar_name="XNYS",
-#         # start_session="2003-10-01",
-#         # start_session="2018-01-01",
-#         start_session="2023-01-01",
-#         # end_session="2023-01-12",
-#         end_session="2023-12-31",
-#         # end_session="2024-06-30",
-#     )
-#     print(f"{get_ticker_universe(config, fetch_missing=True)}")
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.WARNING)
+    os.environ["POLYGON_MIRROR_DIR"] = "/Volumes/Oahu/Mirror/files.polygon.io"
+    config = PolygonConfig(
+        environ=os.environ,
+        calendar_name="XNYS",
+        # start_session="2003-10-01",
+        # start_session="2018-01-01",
+        start_session="2023-01-01",
+        # end_session="2023-01-12",
+        end_session="2023-12-31",
+        # end_session="2024-06-30",
+    )
+    splits = load_polygon_splits(config)
+    splits.info()
+    print(splits.head())
+    dividends = load_polygon_dividends(config)
+    dividends.info()
+    print(dividends.head())
