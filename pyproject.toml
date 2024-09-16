@@ -1,5 +1,5 @@
 [project]
-name = 'zipline-polygon-bundle'
+name = 'zipline_polygon_bundle'
 version = '0.1.0'
 description = 'A zipline-reloaded data provider bundle for Polygon.io'
 authors = [
