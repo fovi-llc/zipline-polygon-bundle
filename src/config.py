@@ -72,16 +72,7 @@ class PolygonConfig:
             self.by_ticker_dir,
             f"{self.agg_time}_{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.hive",
         )
-
         self.cache_dir = os.path.join(self.asset_files_dir, "api_cache")
-        self.cache_today_dir = os.path.join(
-            self.cache_dir,
-            parse_timestamp("today", raise_oob=False, side="left", utc=False)
-            .date()
-            .isoformat(),
-        )
-        self.splits_parquet = os.path.join(self.cache_today_dir, "splits.parquet")
-        self.dividends_parquet = os.path.join(self.cache_today_dir, "dividends.parquet")
 
     @property
     def calendar(self):
@@ -94,6 +85,15 @@ class PolygonConfig:
         os.makedirs(ticker_year_dir, exist_ok=True)
         return os.path.join(
             ticker_year_dir, f"tickers_{date.date().isoformat()}.parquet"
+        )
+
+    def api_cache_path(
+        self, start_date: Date, end_date: Date, filename: str, extension=".parquet"
+    ):
+        start_str = parse_date(start_date, calendar=self.calendar).date().isoformat()
+        end_str = parse_date(end_date, calendar=self.calendar).date().isoformat()
+        return os.path.join(
+            self.cache_dir, f"{start_str}_{end_str}/{filename}{extension}"
         )
 
 

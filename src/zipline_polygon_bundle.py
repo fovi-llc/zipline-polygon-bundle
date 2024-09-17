@@ -1,97 +1,17 @@
-import pyarrow.compute
 from zipline.data.bundles import register
 
 from config import PolygonConfig
-from tickers_and_names import PolygonAssets
 from concat_all_aggs import concat_all_aggs_from_csv
 
 import polygon
 from urllib3 import HTTPResponse
 
 import pyarrow
+import pyarrow.compute
 import pandas as pd
-import csv
+import datetime
 import os
 import logging
-
-
-def list_to_string(x):
-    if not hasattr(x, "__len__"):
-        return str(x)
-    if len(x) == 0:
-        return ""
-    if len(x) == 1:
-        return str(x[0])
-    s = set([str(y) for y in x])
-    return f"[{']['.join(sorted(list(s)))}]"
-
-
-def get_ticker_universe(config: PolygonConfig, fetch_missing: bool = False):
-    tickers_csv_path = config.tickers_csv_path
-    print(f"{tickers_csv_path=}")
-    parquet_path = tickers_csv_path.removesuffix(".csv") + ".parquet"
-    if not os.path.exists(parquet_path):
-        if os.path.exists(tickers_csv_path):
-            os.remove(tickers_csv_path)
-        assets = PolygonAssets(config)
-        all_tickers = assets.load_all_tickers(fetch_missing=fetch_missing)
-        all_tickers.info()
-        # all_tickers.to_csv(tickers_csv_path)
-        logging.info("Merging tickers")
-        merged_tickers = assets.merge_tickers(all_tickers)
-        merged_tickers.info()
-        merged_tickers.to_parquet(tickers_csv_path.removesuffix(".csv") + ".parquet")
-        print(
-            f"Saved {len(merged_tickers)} tickers to {tickers_csv_path.removesuffix('.csv') + '.parquet'}"
-        )
-    if not os.path.exists(tickers_csv_path):
-        merged_tickers = pd.read_parquet(parquet_path)
-        merged_tickers["name"] = merged_tickers["name"].apply(list_to_string)
-        merged_tickers["share_class_figi"] = merged_tickers["share_class_figi"].apply(
-            list_to_string
-        )
-        merged_tickers["delisted_utc"] = merged_tickers["delisted_utc"].apply(
-            list_to_string
-        )
-        merged_tickers["currency_name"] = merged_tickers["currency_name"].apply(
-            list_to_string
-        )
-        merged_tickers["locale"] = merged_tickers["locale"].apply(list_to_string)
-        merged_tickers["market"] = merged_tickers["market"].apply(list_to_string)
-        merged_tickers.to_csv(
-            tickers_csv_path, escapechar="\\", quoting=csv.QUOTE_NONNUMERIC
-        )
-        print(f"Saved {len(merged_tickers)} tickers to {tickers_csv_path}")
-
-    # merged_tickers = pd.read_csv(
-    #     tickers_csv_path,
-    #     escapechar="\\",
-    #     quoting=csv.QUOTE_NONNUMERIC,
-    #     dtype={
-    #         "ticker": str,
-    #         "primary_exchange": str,
-    #         "cik": str,
-    #         "type": str,
-    #         "share_class_figi": str,
-    #     },
-    #     # converters={
-    #     #     "ticker": lambda x: str(x),
-    #     #     "start_date": lambda x: pd.to_datetime(x),
-    #     #     "cik": lambda x: str(x) if x else None,
-    #     #     "name": lambda x: str(x),
-    #     #     "end_date": lambda x: pd.to_datetime(x),
-    #     #     "composite_figi": lambda x: str(x).upper(),
-    #     #     "share_class_figi": lambda x: str(x).upper(),
-    #     #     "currency_name": lambda x: str(x).lower(),
-    #     #     "locale": lambda x: str(x).lower(),
-    #     #     "market": lambda x: str(x).lower(),
-    #     #     "primary_exchange": lambda x: str(x).strip().upper(),
-    #     #     "type": lambda x: str(x).upper(),
-    #     # },
-    # )
-    merged_tickers = pd.read_parquet(parquet_path)
-    merged_tickers.info()
-    return merged_tickers
 
 
 def polygon_equities_bundle_day(
@@ -164,71 +84,95 @@ def polygon_equities_bundle_minute(
     )
 
 
-def load_polygon_splits(config: PolygonConfig) -> pd.DataFrame:
-    splits_path = config.splits_parquet
+def load_polygon_splits(
+    config: PolygonConfig, first_start_end: datetime.date, last_end_date: datetime.date
+) -> pd.DataFrame:
+    splits_path = config.api_cache_path(
+        start_date=first_start_end, end_date=last_end_date, filename="list_splits"
+    )
+    if not os.path.exists(splits_path):
+        client = polygon.RESTClient(api_key=config.api_key)
+        splits = client.list_splits(
+            limit=1000,
+            execution_date_gte=first_start_end,
+            execution_date_lt=last_end_date + datetime.timedelta(days=1),
+        )
+        if splits is HTTPResponse:
+            raise ValueError(f"Polygon.list_splits bad HTTPResponse: {splits}")
+        splits = pd.DataFrame(splits)
+        os.makedirs(os.path.dirname(splits_path), exist_ok=True)
+        splits.to_parquet(splits_path)
+        if len(splits) < 10000:
+            logging.error(f"Only got {len(splits)=} from Polygon list_splits.")
+        # We will always load from the file to avoid any chance of weird errors.
     if os.path.exists(splits_path):
         splits = pd.read_parquet(splits_path)
-        if len(splits) > 10000:
-            return splits
-        logging.error(f"Only found {len(splits)=} at {splits_path}")
-
-    client = polygon.RESTClient(api_key=config.api_key)
-    splits = client.list_splits(limit=1000)
-    if splits is HTTPResponse:
-        logging.error(f"HTTPResponse from {splits}")
-        raise ValueError(f"HTTPResponse from {splits}")
-    splits = pd.DataFrame(splits)
-    os.makedirs(os.path.dirname(splits_path), exist_ok=True)
-    splits.to_parquet(splits_path)
-    if len(splits) <= 10000:
-        logging.error(f"Only found {len(splits)=} at {splits_path}")
-    return splits
+        if len(splits) < 10000:
+            logging.error(f"Only found {len(splits)=} at {splits_path}")
+        return splits
+    raise ValueError(f"Failed to load splits from {splits_path}")
 
 
-def load_splits(config: PolygonConfig, ticker_to_sid: dict[str, int]) -> pd.DataFrame:
-    splits = load_polygon_splits(config)
+def load_splits(
+    config: PolygonConfig,
+    first_start_end: datetime.date,
+    last_end_date: datetime.date,
+    ticker_to_sid: dict[str, int],
+) -> pd.DataFrame:
+    splits = load_polygon_splits(config, first_start_end, last_end_date)
     splits["sid"] = splits["ticker"].apply(lambda x: ticker_to_sid.get(x, pd.NA))
     splits.dropna(inplace=True)
-    splits["sid"] = splits["sid"].astype('int64')
+    splits["sid"] = splits["sid"].astype("int64")
     splits["execution_date"] = pd.to_datetime(splits["execution_date"])
     splits.rename(columns={"execution_date": "effective_date"}, inplace=True)
     # Not only do we want a float for ratio but some to/from are not integers.
     splits["split_from"] = splits["split_from"].astype(float)
     splits["split_to"] = splits["split_to"].astype(float)
-    splits["ratio"] =  splits["split_from"] / splits["split_to"]
+    splits["ratio"] = splits["split_from"] / splits["split_to"]
     splits.drop(columns=["ticker", "split_from", "split_to"], inplace=True)
     splits.info()
     return splits
 
 
-def load_polygon_dividends(config: PolygonConfig) -> pd.DataFrame:
-    dividends_path = config.dividends_parquet
+def load_polygon_dividends(
+    config: PolygonConfig, first_start_end: datetime.date, last_end_date: datetime.date
+) -> pd.DataFrame:
+    dividends_path = config.api_cache_path(
+        start_date=first_start_end, end_date=last_end_date, filename="list_dividends"
+    )
+    if not os.path.exists(dividends_path):
+        client = polygon.RESTClient(api_key=config.api_key)
+        dividends = client.list_dividends(
+            limit=1000,
+            record_date_gte=first_start_end,
+            pay_date_lt=last_end_date + datetime.timedelta(days=1),
+        )
+        if dividends is HTTPResponse:
+            raise ValueError(f"Polygon.list_dividends bad HTTPResponse: {dividends}")
+        dividends = pd.DataFrame(dividends)
+        if len(dividends) < 10000:
+            logging.error(f"Only got {len(dividends)=} from Polygon list_dividends.")
+        os.makedirs(os.path.dirname(dividends_path), exist_ok=True)
+        dividends.to_parquet(dividends_path)
+        # We will always load from the file to avoid any chance of weird errors.
     if os.path.exists(dividends_path):
         dividends = pd.read_parquet(dividends_path)
-        if len(dividends) > 10000:
-            return dividends
-        logging.error(f"Only found {len(dividends)=} at {dividends_path}")
-
-    client = polygon.RESTClient(api_key=config.api_key)
-    dividends = client.list_dividends(limit=1000)
-    if dividends is HTTPResponse:
-        logging.error(f"HTTPResponse from {dividends}")
-        raise ValueError(f"HTTPResponse from {dividends}")
-    dividends = pd.DataFrame(dividends)
-    os.makedirs(os.path.dirname(dividends_path), exist_ok=True)
-    dividends.to_parquet(dividends_path)
-    if len(dividends) <= 10000:
-        logging.error(f"Only found {len(dividends)=} at {dividends_path}")
-    return dividends
+        if len(dividends) < 10000:
+            logging.error(f"Only found {len(dividends)=} at {dividends_path}")
+        return dividends
+    raise ValueError(f"Failed to load dividends from {dividends_path}")
 
 
 def load_dividends(
-    config: PolygonConfig, ticker_to_sid: dict[str, int]
+    config: PolygonConfig,
+    first_start_end: datetime.date,
+    last_end_date: datetime.date,
+    ticker_to_sid: dict[str, int],
 ) -> pd.DataFrame:
-    dividends = load_polygon_dividends(config)
+    dividends = load_polygon_dividends(config, first_start_end, last_end_date)
     dividends["sid"] = dividends["ticker"].apply(lambda x: ticker_to_sid.get(x, pd.NA))
     dividends.dropna(how="any", inplace=True)
-    dividends["sid"] = dividends["sid"].astype('int64')
+    dividends["sid"] = dividends["sid"].astype("int64")
     dividends["declaration_date"] = pd.to_datetime(dividends["declaration_date"])
     dividends["ex_dividend_date"] = pd.to_datetime(dividends["ex_dividend_date"])
     dividends["record_date"] = pd.to_datetime(dividends["record_date"])
@@ -280,6 +224,7 @@ def polygon_equities_bundle(
     aggregates = pyarrow.dataset.dataset(config.by_ticker_hive_dir)
 
     ticker_to_sid = {}
+    dates_with_data = set()
 
     # Get data for all stocks and write to Zipline
     if config.agg_time == "day":
@@ -290,6 +235,7 @@ def polygon_equities_bundle(
                 metadata,
                 calendar,
                 ticker_to_sid,
+                dates_with_data,
             ),
             show_progress=show_progress,
         )
@@ -301,6 +247,7 @@ def polygon_equities_bundle(
                 metadata,
                 calendar,
                 ticker_to_sid,
+                dates_with_data,
             ),
             show_progress=show_progress,
         )
@@ -309,8 +256,10 @@ def polygon_equities_bundle(
     asset_db_writer.write(equities=metadata)
 
     # Load splits and dividends
-    splits = load_splits(config, ticker_to_sid)
-    dividends = load_dividends(config, ticker_to_sid)
+    first_start_end = min(dates_with_data).date()
+    last_end_date = max(dates_with_data).date()
+    splits = load_splits(config, first_start_end, last_end_date, ticker_to_sid)
+    dividends = load_dividends(config, first_start_end, last_end_date, ticker_to_sid)
 
     # Write splits and dividends
     adjustment_writer.write(splits=splits, dividends=dividends)
@@ -321,7 +270,12 @@ def symbol_to_upper(s: str) -> str:
 
 
 def process_day_aggregates(
-    aggregates, sessions, metadata, calendar, ticker_to_sid: dict[str, int]
+    aggregates,
+    sessions,
+    metadata,
+    calendar,
+    ticker_to_sid: dict[str, int],
+    dates_with_data: set,
 ):
     table = aggregates.to_table()
     table = table.rename_columns({"ticker": "symbol", "window_start": "day"})
@@ -347,7 +301,9 @@ def process_day_aggregates(
             # continue
         # Check first and last date.
         start_date = df.index[0]
+        dates_with_data.add(start_date)
         end_date = df.index[-1]
+        dates_with_data.add(end_date)
         # Synch to the official exchange calendar
         df = df.reindex(sessions.tz_localize(None))[
             start_date:end_date
@@ -380,7 +336,12 @@ def process_day_aggregates(
 
 
 def process_minute_aggregates(
-    aggregates, sessions, metadata, calendar, ticker_to_sid: dict[str, int]
+    aggregates,
+    sessions,
+    metadata,
+    calendar,
+    ticker_to_sid: dict[str, int],
+    dates_with_data: set,
 ):
     table = aggregates.to_table()
     table = table.rename_columns({"ticker": "symbol", "window_start": "timestamp"})
@@ -406,7 +367,9 @@ def process_minute_aggregates(
             continue
         # Check first and last date.
         start_date = df.index[0].date()
+        dates_with_data.add(start_date)
         end_date = df.index[-1].date()
+        dates_with_data.add(end_date)
         # Synch to the official exchange calendar
         df = df.reindex(sessions.tz_localize(None))[
             start_date:end_date
@@ -473,6 +436,7 @@ def register_polygon_equities_bundle(
 # if __name__ == "__main__":
 #     logging.basicConfig(level=logging.WARNING)
 #     os.environ["POLYGON_MIRROR_DIR"] = "/Volumes/Oahu/Mirror/files.polygon.io"
+#     os.environ["ZIPLINE_ROOT"] = "/Volumes/Oahu/Workspaces/zipline"
 #     config = PolygonConfig(
 #         environ=os.environ,
 #         calendar_name="XNYS",
