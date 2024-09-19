@@ -10,8 +10,8 @@ export POLYGON_DATA_DIR=/Volumes/Oahu/Mirror/files.polygon.io
 # Set up your rclone configuration
 rclone config create s3polygon s3 env_auth=false access_key_id=$POLYGON_S3_Access_ID secret_access_key=$POLYGON_Secret_Access_Key endpoint=$POLYGON_FILE_ENDPOINT
 
-# List
-rclone ls s3polygon:flatfiles
+# List dirs https://rclone.org/commands/rclone_lsd/ (ls is recursive by default)
+rclone lsd s3polygon:flatfiles
 
 # Total size
 rclone ls s3polygon:flatfiles | awk '{sum += $1} END {print sum}' - 
@@ -68,3 +68,24 @@ rclone copy --check-first --checksum --progress s3polygon:flatfiles/us_stocks_si
 
 
 export ZIPLINE_ROOT=/Volumes/Oahu/Workspaces/zipline
+
+rclone copy -P s3polygon:flatfiles/us_options_opra/day_aggs_v1/2023 \
+    $POLYGON_DATA_DIR/flatfiles/us_options_opra/day_aggs_v1/2023
+
+for year in 2024 2023 2022 2021 2020; do \
+    rclone copy -P s3polygon:flatfiles/us_options_opra/day_aggs_v1/$year \
+    $POLYGON_DATA_DIR/flatfiles/us_options_opra/day_aggs_v1/$year; \
+done
+
+for year in 2024 2023 2022 2021 2020; do \
+    rclone copy -P s3polygon:flatfiles/us_options_opra/minute_aggs_v1/$year \
+    $POLYGON_DATA_DIR/flatfiles/us_options_opra/minute_aggs_v1/$year; \
+done
+
+rclone copy -P s3polygon:flatfiles/us_options_opra/trades_v1/2023 \
+    $POLYGON_DATA_DIR/flatfiles/us_options_opra/trades_v1/2023
+
+for year in 2024 2023 2022 2021 2020; do \
+    rclone copy -P s3polygon:flatfiles/us_options_opra/trades_v1/$year \
+    $POLYGON_DATA_DIR/flatfiles/us_options_opra/trades_v1/$year; \
+done

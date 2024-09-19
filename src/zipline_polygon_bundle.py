@@ -84,6 +84,8 @@ def polygon_equities_bundle_minute(
     )
 
 
+# TODO: Change warnings to be relative to number of days in the range.
+
 def load_polygon_splits(
     config: PolygonConfig, first_start_end: datetime.date, last_end_date: datetime.date
 ) -> pd.DataFrame:
@@ -100,6 +102,7 @@ def load_polygon_splits(
         if splits is HTTPResponse:
             raise ValueError(f"Polygon.list_splits bad HTTPResponse: {splits}")
         splits = pd.DataFrame(splits)
+        print(f"Got {len(splits)=} from Polygon list_splits.")
         os.makedirs(os.path.dirname(splits_path), exist_ok=True)
         splits.to_parquet(splits_path)
         if len(splits) < 10000:
@@ -107,6 +110,7 @@ def load_polygon_splits(
         # We will always load from the file to avoid any chance of weird errors.
     if os.path.exists(splits_path):
         splits = pd.read_parquet(splits_path)
+        print(f"Loaded {len(splits)} splits from {splits_path}")
         if len(splits) < 10000:
             logging.error(f"Only found {len(splits)=} at {splits_path}")
         return splits
@@ -120,7 +124,7 @@ def load_splits(
     ticker_to_sid: dict[str, int],
 ) -> pd.DataFrame:
     splits = load_polygon_splits(config, first_start_end, last_end_date)
-    splits["sid"] = splits["ticker"].apply(lambda x: ticker_to_sid.get(x, pd.NA))
+    splits["sid"] = splits["ticker"].apply(lambda t: ticker_to_sid.get(t, pd.NA))
     splits.dropna(inplace=True)
     splits["sid"] = splits["sid"].astype("int64")
     splits["execution_date"] = pd.to_datetime(splits["execution_date"])
@@ -150,6 +154,7 @@ def load_polygon_dividends(
         if dividends is HTTPResponse:
             raise ValueError(f"Polygon.list_dividends bad HTTPResponse: {dividends}")
         dividends = pd.DataFrame(dividends)
+        print(f"Got {len(dividends)=} from Polygon list_dividends.")
         if len(dividends) < 10000:
             logging.error(f"Only got {len(dividends)=} from Polygon list_dividends.")
         os.makedirs(os.path.dirname(dividends_path), exist_ok=True)
@@ -157,6 +162,7 @@ def load_polygon_dividends(
         # We will always load from the file to avoid any chance of weird errors.
     if os.path.exists(dividends_path):
         dividends = pd.read_parquet(dividends_path)
+        print(f"Loaded {len(dividends)} splits from {dividends_path}")
         if len(dividends) < 10000:
             logging.error(f"Only found {len(dividends)=} at {dividends_path}")
         return dividends
@@ -170,7 +176,7 @@ def load_dividends(
     ticker_to_sid: dict[str, int],
 ) -> pd.DataFrame:
     dividends = load_polygon_dividends(config, first_start_end, last_end_date)
-    dividends["sid"] = dividends["ticker"].apply(lambda x: ticker_to_sid.get(x, pd.NA))
+    dividends["sid"] = dividends["ticker"].apply(lambda t: ticker_to_sid.get(t, pd.NA))
     dividends.dropna(how="any", inplace=True)
     dividends["sid"] = dividends["sid"].astype("int64")
     dividends["declaration_date"] = pd.to_datetime(dividends["declaration_date"])
@@ -256,8 +262,8 @@ def polygon_equities_bundle(
     asset_db_writer.write(equities=metadata)
 
     # Load splits and dividends
-    first_start_end = min(dates_with_data).date()
-    last_end_date = max(dates_with_data).date()
+    first_start_end = min(dates_with_data)
+    last_end_date = max(dates_with_data)
     splits = load_splits(config, first_start_end, last_end_date, ticker_to_sid)
     dividends = load_dividends(config, first_start_end, last_end_date, ticker_to_sid)
 
@@ -301,9 +307,9 @@ def process_day_aggregates(
             # continue
         # Check first and last date.
         start_date = df.index[0]
-        dates_with_data.add(start_date)
+        dates_with_data.add(start_date.date())
         end_date = df.index[-1]
-        dates_with_data.add(end_date)
+        dates_with_data.add(end_date.date())
         # Synch to the official exchange calendar
         df = df.reindex(sessions.tz_localize(None))[
             start_date:end_date
@@ -357,33 +363,35 @@ def process_minute_aggregates(
         # The SQL schema zipline uses for symbols ignores case
         if not symbol.isupper():
             df["symbol"] = symbol_to_upper(symbol)
-        df.info()
-        # Remove duplicates
-        df = df[~df.index.duplicated()]
-        # Take days as per calendar
+        # # Remove duplicates
+        # df = df[~df.index.duplicated()]
+        # Take minutes as per calendar
         df = df[df.index.isin(sessions)]
         if len(df) < 2:
-            print(f"WARNING: Not enough data for {symbol}")
+            print(f" WARNING: Not enough data for {symbol=} {sid=}")
             continue
         # Check first and last date.
         start_date = df.index[0].date()
         dates_with_data.add(start_date)
         end_date = df.index[-1].date()
         dates_with_data.add(end_date)
-        # Synch to the official exchange calendar
-        df = df.reindex(sessions.tz_localize(None))[
-            start_date:end_date
-        ]  # tz_localize(None)
-        # Missing volume and transactions are zero
-        df["volume"] = df["volume"].fillna(0)
-        df["transactions"] = df["transactions"].fillna(0)
-        # Forward fill missing price data (better than backfill)
-        df.ffill(inplace=True)
-        # Back fill missing data (maybe necessary for the first day)
-        df.bfill(inplace=True)
-        # There should be no missing data
-        if df.isnull().sum().sum() > 0:
-            print(f" WARNING: Missing data for {symbol}")
+        # # Synch to the official exchange calendar
+        # df = df.reindex(sessions.tz_localize(None))
+        # # Missing volume and transactions are zero
+        # df["volume"] = df["volume"].fillna(0)
+        # df["transactions"] = df["transactions"].fillna(0)
+        # df.info()
+        # # Forward fill missing price data (better than backfill)
+        # df.ffill(inplace=True)
+        # df.info()
+        # # Back fill missing data (maybe necessary for the first day)
+        # df.bfill(inplace=True)
+        # df.info()
+        # # There should be no missing data
+        # if len(df) != len(sessions):
+        #     print(f" WARNING: Missing data for {symbol=} {len(df)=} != {len(sessions)=}")
+        # if df.isnull().sum().sum() > 0:
+        #     print(f" WARNING: nulls in data for {symbol=} {df.isnull().sum().sum()}")
 
         # The auto_close date is the day after the last trade.
         ac_date = end_date + pd.Timedelta(days=1)
@@ -400,9 +408,10 @@ def process_minute_aggregates(
         # A df with 1 bar crashes zipline/data/bcolz_minute_bars.py", line 747
         # pd.Timestamp(dts[0]), direction="previous"
         if len(df) > 1:
+            print(f"\n{symbol=} {sid=} {len(df)=} {df.index[0]=} {df.index[-1]=}")
             yield sid, df
         else:
-            print(f" WARNING: Not enough data post reindex for {symbol}")
+            print(f" WARNING: Not enough data post reindex for {symbol=} {sid=}")
     return
 
 
