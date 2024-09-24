@@ -51,6 +51,7 @@ class PolygonConfig:
         self.flat_files_dir = environ.get(
             "POLYGON_FLAT_FILES_DIR", os.path.join(self.data_dir, "flatfiles")
         )
+        self.csv_paths_pattern = environ.get("POLYGON_FLAT_FILES_CSV_PATTERN", "**/*.csv.gz")
         self.agg_time = agg_time
         self.asset_files_dir = os.path.join(self.flat_files_dir, self.asset_subdir)
         self.minute_aggs_dir = os.path.join(self.asset_files_dir, "minute_aggs_v1")

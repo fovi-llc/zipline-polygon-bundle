@@ -1,17 +1,22 @@
 from zipline.data.bundles import register
 
 from config import PolygonConfig
-from concat_all_aggs import concat_all_aggs_from_csv
+from concat_all_aggs import generate_csv_agg_tables
 
 import polygon
 from urllib3 import HTTPResponse
 
 import pyarrow
 import pyarrow.compute
+import pyarrow as pa
+from pyarrow import dataset as pa_ds
+from pyarrow import csv as pa_csv
+
 import pandas as pd
 import datetime
 import os
 import logging
+import glob
 
 
 def polygon_equities_bundle_day(
@@ -85,6 +90,7 @@ def polygon_equities_bundle_minute(
 
 
 # TODO: Change warnings to be relative to number of days in the range.
+
 
 def load_polygon_splits(
     config: PolygonConfig, first_start_end: datetime.date, last_end_date: datetime.date
@@ -198,6 +204,26 @@ def load_dividends(
     return dividends
 
 
+def generate_all_aggs_from_csv(
+    config: PolygonConfig,
+    calendar,
+    start_session,
+    end_session,
+    ticker_to_sid: dict[str, int],
+    dates_with_data: set,
+):
+    schema, tables = generate_csv_agg_tables(config)
+    for table in tables:
+        table = table.rename_columns({"ticker": "symbol", "window_start": "day"})
+        table = table.sort_by([("symbol", "ascending")])
+        symbols = sorted(set(table.column("symbol").to_pylist()))
+        for sid, symbol in enumerate(symbols):
+            ticker_to_sid[symbol] = sid
+            df = table.filter(
+                pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)
+            ).to_pandas()
+
+
 def polygon_equities_bundle(
     config: PolygonConfig,
     asset_db_writer,
@@ -224,10 +250,9 @@ def polygon_equities_bundle(
         )
     )
 
-    if not os.path.exists(config.by_ticker_hive_dir):
-        concat_all_aggs_from_csv(config)
-
-    aggregates = pyarrow.dataset.dataset(config.by_ticker_hive_dir)
+    aggregates = generate_all_aggs_from_csv(
+        config, ticker_to_sid, dates_with_data, calendar, start_session, end_session
+    )
 
     ticker_to_sid = {}
     dates_with_data = set()
@@ -426,7 +451,7 @@ def register_polygon_equities_bundle(
     # include_asset_types=None,
 ):
     if agg_time not in ["day", "minute"]:
-        raise ValueError(f"agg_time must be 'day' or 'minute', not {agg_time}")
+        raise ValueError(f"agg_time must be 'day' or 'minute', not '{agg_time}'")
     register(
         bundlename,
         (

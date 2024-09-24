@@ -1,5 +1,5 @@
 import shutil
-from typing import Iterator
+from typing import Iterator, Tuple
 from config import PolygonConfig
 
 import argparse
@@ -13,12 +13,12 @@ from pyarrow import csv as pa_csv
 import pandas as pd
 
 
-def csv_agg_scanner(
-    paths: list,
+def generate_tables_from_csv_files(
+    paths: Iterator,
     schema: pa.Schema,
     start_timestamp: pd.Timestamp,
     limit_timestamp: pd.Timestamp,
-) -> Iterator[pa.RecordBatch]:
+) -> Iterator[pa.Table]:
     empty_table = schema.empty_table()
     # TODO: Find which column(s) need to be cast to int64 from the schema.
     empty_table = empty_table.set_column(
@@ -64,32 +64,20 @@ def csv_agg_scanner(
             continue
 
         print(f"{path=}")
-        for batch in table.to_batches():
-            yield batch
+        yield table
     print(f"{skipped_tables=}")
 
 
-def concat_all_aggs_from_csv(
+def generate_csv_agg_tables(
     config: PolygonConfig,
-    aggs_pattern: str = "**/*.csv.gz",
-    overwrite: bool = False,
-) -> list:
+) -> Tuple[pa.Schema, Iterator[pa.Table]]:
     """zipline does bundle ingestion one ticker at a time."""
-    if os.path.exists(config.by_ticker_hive_dir):
-        if overwrite:
-            print(f"Removing {config.by_ticker_hive_dir=}")
-            shutil.rmtree(config.by_ticker_hive_dir)
-        else:
-            raise FileExistsError(
-                f"{config.by_ticker_hive_dir=} exists and overwrite is False."
-            )
-
     # We sort by path because they have the year and month in the dir names and the date in the filename.
     paths = sorted(
         list(
             glob.glob(
-                os.path.join(config.aggs_dir, aggs_pattern),
-                recursive="**" in aggs_pattern,
+                os.path.join(config.aggs_dir, config.csv_paths_pattern),
+                recursive="**" in config.csv_paths_pattern,
             )
         )
     )
@@ -126,18 +114,36 @@ def concat_all_aggs_from_csv(
         ]
     )
 
-    agg_scanner = pa_ds.Scanner.from_batches(
-        csv_agg_scanner(
-            paths=paths,
-            schema=polygon_aggs_schema,
-            start_timestamp=config.start_timestamp,
-            limit_timestamp=config.end_timestamp + pd.to_timedelta(1, unit="day"),
-        ),
+    return polygon_aggs_schema, generate_tables_from_csv_files(
+        paths=paths,
         schema=polygon_aggs_schema,
+        start_timestamp=config.start_timestamp,
+        limit_timestamp=config.end_timestamp + pd.to_timedelta(1, unit="day"),
     )
 
+
+def generate_batches_from_tables(tables):
+    for table in tables:
+        yield table.to_batches()
+
+
+def concat_all_aggs_from_csv(
+    config: PolygonConfig,
+    overwrite: bool = False,
+) -> None:
+    if os.path.exists(config.by_ticker_hive_dir):
+        if overwrite:
+            print(f"Removing {config.by_ticker_hive_dir=}")
+            shutil.rmtree(config.by_ticker_hive_dir)
+        else:
+            raise FileExistsError(
+                f"{config.by_ticker_hive_dir=} exists and overwrite is False."
+            )
+
+    schema, tables = generate_csv_agg_tables(config)
     pa_ds.write_dataset(
-        agg_scanner,
+        generate_batches_from_tables(tables),
+        schema=schema,
         base_dir=config.by_ticker_hive_dir,
         format="parquet",
         existing_data_behavior="overwrite_or_ignore",
@@ -160,7 +166,7 @@ if __name__ == "__main__":
 
     # TODO: These defaults should be None but for dev convenience they are set for my local config.
     parser.add_argument("--data_dir", default="/Volumes/Oahu/Mirror/files.polygon.io")
-    parser.add_argument("--aggs_pattern", default="**/*.csv.gz")
+    # parser.add_argument("--aggs_pattern", default="**/*.csv.gz")
     # parser.add_argument("--aggs_pattern", default="2020/10/**/*.csv.gz")
 
     args = parser.parse_args()
@@ -179,6 +185,5 @@ if __name__ == "__main__":
 
     concat_all_aggs_from_csv(
         config=config,
-        aggs_pattern=args.aggs_pattern,
         overwrite=args.overwrite,
     )
