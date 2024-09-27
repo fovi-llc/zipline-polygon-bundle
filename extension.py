@@ -8,7 +8,7 @@ calendar = get_calendar("XNYS")
 register_polygon_equities_bundle(
     "polygon",
     start_session=parse_date("2016-01-05", calendar=calendar),
-    end_session=parse_date("2024-09-11", calendar=calendar),
+    end_session=parse_date("2024-09-13", calendar=calendar),
     calendar_name=calendar.name,
     agg_time="day"
 )

@@ -30,6 +30,7 @@ def load_polygon_splits(
     splits_path = config.api_cache_path(
         start_date=first_start_end, end_date=last_end_date, filename="list_splits"
     )
+    expected_split_count = (last_end_date - first_start_end).days * 3
     if not os.path.exists(splits_path):
         client = polygon.RESTClient(api_key=config.api_key)
         splits = client.list_splits(
@@ -43,14 +44,20 @@ def load_polygon_splits(
         print(f"Got {len(splits)=} from Polygon list_splits.")
         os.makedirs(os.path.dirname(splits_path), exist_ok=True)
         splits.to_parquet(splits_path)
-        if len(splits) < 10000:
-            logging.error(f"Only got {len(splits)=} from Polygon list_splits.")
+        if len(splits) < expected_split_count:
+            logging.warning(
+                f"Only got {len(splits)=} from Polygon list_splits (expected {expected_split_count=}).  "
+                "This is probably fine if your historical range is short."
+            )
         # We will always load from the file to avoid any chance of weird errors.
     if os.path.exists(splits_path):
         splits = pd.read_parquet(splits_path)
         print(f"Loaded {len(splits)} splits from {splits_path}")
-        if len(splits) < 10000:
-            logging.error(f"Only found {len(splits)=} at {splits_path}")
+        if len(splits) < expected_split_count:
+            logging.warning(
+                f"Only got {len(splits)=} from Polygon list_splits (expected {expected_split_count=}).  "
+                "This is probably fine if your historical range is short."
+            )
         return splits
     raise ValueError(f"Failed to load splits from {splits_path}")
 
@@ -166,7 +173,7 @@ def process_day_aggregates(
             print(f" INFO: {symbol=} {sid=} not monotonic increasing")
             df.sort_index(inplace=True)
             # Remove duplicates
-            df = df[~df.index.duplicated(keep='first')]
+            df = df[~df.index.duplicated(keep="first")]
         # Take days as per calendar
         df = df[df.index.isin(sessions)]
         if len(df) < 2:
@@ -194,13 +201,13 @@ def process_day_aggregates(
             print(f" WARNING: Missing data for {symbol=} {sid=}")
 
         # The auto_close date is the day after the last trade.
-        ac_date = end_date + pd.Timedelta(days=1)
+        auto_close_date = end_date + pd.Timedelta(days=1)
 
         # Add a row to the metadata DataFrame. Don't forget to add an exchange field.
         metadata.loc[sid] = (
             start_date,
             end_date,
-            ac_date,
+            auto_close_date,
             symbol_escaped,
             calendar.name,
             symbol,
@@ -230,8 +237,8 @@ def polygon_equities_bundle_day(
         agg_time="day",
     )
 
-    config.by_ticker_hive_dir = os.path.join(cache, "day_aggs_by_ticker")
-    concat_all_aggs_from_csv(config)
+    if not os.path.exists(config.by_ticker_hive_dir):
+        concat_all_aggs_from_csv(config)
     aggregates = pyarrow.dataset.dataset(config.by_ticker_hive_dir)
 
     # Zipline uses case-insensitive symbols, so we need to convert them to uppercase with a ^ prefix when lowercase.
@@ -291,7 +298,9 @@ def process_minute_aggregates(
     ticker_to_sid: dict[str, int],
     dates_with_data: set,
 ):
-    aggregates = aggregates.rename_columns({"ticker": "symbol", "window_start": "timestamp"})
+    aggregates = aggregates.rename_columns(
+        {"ticker": "symbol", "window_start": "timestamp"}
+    )
     for symbol in sorted(set(aggregates.column("symbol").to_pylist())):
         if symbol not in ticker_to_sid:
             ticker_to_sid[symbol] = len(ticker_to_sid) + 1

@@ -28,7 +28,12 @@ def generate_tables_from_csv_files(
     )
     csv_schema = empty_table.schema
 
-    skipped_tables = 0
+    print(f"{len(paths)=}")
+    if len(paths) > 0:
+        print(f"{paths[0]=}")
+        print(f"{paths[-1]=}")
+    tables_read_count = 0
+    skipped_table_count = 0
     for path in paths:
         convert_options = pa_csv.ConvertOptions(
             column_types=csv_schema,
@@ -37,6 +42,7 @@ def generate_tables_from_csv_files(
         )
 
         table = pa.csv.read_csv(path, convert_options=convert_options)
+        tables_read_count += 1
         table = table.set_column(
             table.column_names.index("window_start"),
             "window_start",
@@ -60,12 +66,11 @@ def generate_tables_from_csv_files(
         # https://arrow.apache.org/docs/python/generated/pyarrow.compute.days_between.html
 
         if table.num_rows == 0:
-            skipped_tables += 1
+            skipped_table_count += 1
             continue
 
-        print(f"{path=}")
         yield table
-    print(f"{skipped_tables=}")
+    print(f"{tables_read_count=} {skipped_table_count=}")
 
 
 def generate_csv_agg_tables(
@@ -124,7 +129,8 @@ def generate_csv_agg_tables(
 
 def generate_batches_from_tables(tables):
     for table in tables:
-        yield table.to_batches()
+        for batch in table.to_batches():
+            yield batch
 
 
 def concat_all_aggs_from_csv(
@@ -141,6 +147,7 @@ def concat_all_aggs_from_csv(
             )
 
     schema, tables = generate_csv_agg_tables(config)
+    # scanner = pa_ds.Scanner.from_batches(source=generate_batches_from_tables(tables), schema=schema)
     pa_ds.write_dataset(
         generate_batches_from_tables(tables),
         schema=schema,
