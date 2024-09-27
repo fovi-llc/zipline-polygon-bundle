@@ -1,92 +1,18 @@
 from zipline.data.bundles import register
 
 from config import PolygonConfig
-from concat_all_aggs import generate_csv_agg_tables
+from concat_all_aggs import concat_all_aggs_from_csv, generate_csv_agg_tables
 
 import polygon
 from urllib3 import HTTPResponse
 
 import pyarrow
 import pyarrow.compute
-import pyarrow as pa
-from pyarrow import dataset as pa_ds
-from pyarrow import csv as pa_csv
 
 import pandas as pd
 import datetime
 import os
 import logging
-import glob
-
-
-def polygon_equities_bundle_day(
-    environ,
-    asset_db_writer,
-    minute_bar_writer,
-    daily_bar_writer,
-    adjustment_writer,
-    calendar,
-    start_session,
-    end_session,
-    cache,
-    show_progress,
-    output_dir,
-):
-    config = PolygonConfig(
-        environ=environ,
-        calendar_name=calendar.name,
-        start_session=start_session,
-        end_session=end_session,
-        agg_time="day",
-    )
-    return polygon_equities_bundle(
-        config,
-        asset_db_writer,
-        minute_bar_writer,
-        daily_bar_writer,
-        adjustment_writer,
-        calendar,
-        start_session,
-        end_session,
-        cache,
-        show_progress,
-        output_dir,
-    )
-
-
-def polygon_equities_bundle_minute(
-    environ,
-    asset_db_writer,
-    minute_bar_writer,
-    daily_bar_writer,
-    adjustment_writer,
-    calendar,
-    start_session,
-    end_session,
-    cache,
-    show_progress,
-    output_dir,
-):
-    config = PolygonConfig(
-        environ=environ,
-        calendar_name=calendar.name,
-        start_session=start_session,
-        end_session=end_session,
-        agg_time="minute",
-    )
-    return polygon_equities_bundle(
-        config,
-        asset_db_writer,
-        minute_bar_writer,
-        daily_bar_writer,
-        adjustment_writer,
-        calendar,
-        start_session,
-        end_session,
-        cache,
-        show_progress,
-        output_dir,
-    )
 
 
 # TODO: Change warnings to be relative to number of days in the range.
@@ -204,96 +130,13 @@ def load_dividends(
     return dividends
 
 
-def generate_all_aggs_from_csv(
+def generate_all_agg_tables_from_csv(
     config: PolygonConfig,
-    calendar,
-    start_session,
-    end_session,
-    ticker_to_sid: dict[str, int],
-    dates_with_data: set,
 ):
     schema, tables = generate_csv_agg_tables(config)
     for table in tables:
-        table = table.rename_columns({"ticker": "symbol", "window_start": "day"})
-        table = table.sort_by([("symbol", "ascending")])
-        symbols = sorted(set(table.column("symbol").to_pylist()))
-        for sid, symbol in enumerate(symbols):
-            ticker_to_sid[symbol] = sid
-            df = table.filter(
-                pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)
-            ).to_pandas()
-
-
-def polygon_equities_bundle(
-    config: PolygonConfig,
-    asset_db_writer,
-    minute_bar_writer,
-    daily_bar_writer,
-    adjustment_writer,
-    calendar,
-    start_session,
-    end_session,
-    cache,
-    show_progress,
-    output_dir,
-):
-    assert calendar == config.calendar
-
-    metadata = pd.DataFrame(
-        columns=(
-            "start_date",
-            "end_date",
-            "auto_close_date",
-            "symbol",
-            "exchange",
-            "asset_name",
-        )
-    )
-
-    aggregates = generate_all_aggs_from_csv(
-        config, ticker_to_sid, dates_with_data, calendar, start_session, end_session
-    )
-
-    ticker_to_sid = {}
-    dates_with_data = set()
-
-    # Get data for all stocks and write to Zipline
-    if config.agg_time == "day":
-        daily_bar_writer.write(
-            process_day_aggregates(
-                aggregates,
-                calendar.sessions_in_range(start_session, end_session),
-                metadata,
-                calendar,
-                ticker_to_sid,
-                dates_with_data,
-            ),
-            show_progress=show_progress,
-        )
-    else:
-        minute_bar_writer.write(
-            process_minute_aggregates(
-                aggregates,
-                calendar.sessions_minutes(start_session, end_session),
-                metadata,
-                calendar,
-                ticker_to_sid,
-                dates_with_data,
-            ),
-            show_progress=show_progress,
-        )
-
-    # Write the metadata
-    asset_db_writer.write(equities=metadata)
-
-    # Load splits and dividends
-    first_start_end = min(dates_with_data)
-    last_end_date = max(dates_with_data)
-    splits = load_splits(config, first_start_end, last_end_date, ticker_to_sid)
-    dividends = load_dividends(config, first_start_end, last_end_date, ticker_to_sid)
-
-    # Write splits and dividends
-    adjustment_writer.write(splits=splits, dividends=dividends)
+        table = table.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
+        yield table
 
 
 def symbol_to_upper(s: str) -> str:
@@ -366,6 +209,70 @@ def process_day_aggregates(
     return
 
 
+def polygon_equities_bundle_day(
+    environ,
+    asset_db_writer,
+    minute_bar_writer,
+    daily_bar_writer,
+    adjustment_writer,
+    calendar,
+    start_session,
+    end_session,
+    cache,
+    show_progress,
+    output_dir,
+):
+    config = PolygonConfig(
+        environ=environ,
+        calendar_name=calendar.name,
+        start_session=start_session,
+        end_session=end_session,
+        agg_time="day",
+    )
+
+    config.by_ticker_hive_dir = os.path.join(cache, "day_aggs_by_ticker")
+    concat_all_aggs_from_csv(config)
+    aggregates = pyarrow.dataset.dataset(config.by_ticker_hive_dir)
+
+    metadata = pd.DataFrame(
+        columns=(
+            "start_date",
+            "end_date",
+            "auto_close_date",
+            "symbol",
+            "exchange",
+            "asset_name",
+        )
+    )
+    ticker_to_sid = {}
+    dates_with_data = set()
+
+    # Get data for all stocks and write to Zipline
+    daily_bar_writer.write(
+        process_day_aggregates(
+            aggregates,
+            calendar.sessions_in_range(start_session, end_session),
+            metadata,
+            calendar,
+            ticker_to_sid,
+            dates_with_data,
+        ),
+        show_progress=show_progress,
+    )
+
+    # Write the metadata
+    asset_db_writer.write(equities=metadata)
+
+    # Load splits and dividends
+    first_start_end = min(dates_with_data)
+    last_end_date = max(dates_with_data)
+    splits = load_splits(config, first_start_end, last_end_date, ticker_to_sid)
+    dividends = load_dividends(config, first_start_end, last_end_date, ticker_to_sid)
+
+    # Write splits and dividends
+    adjustment_writer.write(splits=splits, dividends=dividends)
+
+
 def process_minute_aggregates(
     aggregates,
     sessions,
@@ -374,16 +281,14 @@ def process_minute_aggregates(
     ticker_to_sid: dict[str, int],
     dates_with_data: set,
 ):
-    table = aggregates.to_table()
-    table = table.rename_columns({"ticker": "symbol", "window_start": "timestamp"})
-    table = table.sort_by([("symbol", "ascending")])
-    symbols = sorted(set(table.column("symbol").to_pylist()))
-    for sid, symbol in enumerate(symbols):
-        ticker_to_sid[symbol] = sid
-        df = table.filter(
+    aggregates = aggregates.rename_columns({"ticker": "symbol", "window_start": "timestamp"})
+    for symbol in sorted(set(aggregates.column("symbol").to_pylist())):
+        if symbol not in ticker_to_sid:
+            ticker_to_sid[symbol] = len(ticker_to_sid) + 1
+        sid = ticker_to_sid[symbol]
+        df = aggregates.filter(
             pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)
         ).to_pandas()
-        # df["day"] = pd.to_datetime(df["day"].dt.date)
         df = df.set_index("timestamp")
         # The SQL schema zipline uses for symbols ignores case
         if not symbol.isupper():
@@ -421,15 +326,28 @@ def process_minute_aggregates(
         # The auto_close date is the day after the last trade.
         ac_date = end_date + pd.Timedelta(days=1)
 
-        # Add a row to the metadata DataFrame. Don't forget to add an exchange field.
-        metadata.loc[sid] = (
-            start_date,
-            end_date,
-            ac_date,
-            symbol_to_upper(symbol),
-            calendar.name,
-            symbol,
-        )
+        # If metadata already has this sid, just extend the end_date and ac_date.
+        if sid in metadata.index:
+            if metadata.loc[sid, "start_date"] >= start_date:
+                print(
+                    f" ERROR: {symbol=} {sid=} {metadata.loc[sid, 'start_date']=} >= {start_date=}"
+                )
+            if metadata.loc[sid, "end_date"] >= start_date:
+                print(
+                    f" ERROR: {symbol=} {sid=} {metadata.loc[sid, 'end_date']=} >= {end_date=}"
+                )
+            metadata.loc[sid, "end_date"] = end_date
+            metadata.loc[sid, "auto_close_date"] = ac_date
+        else:
+            # Add a row to the metadata DataFrame. Don't forget to add an exchange field.
+            metadata.loc[sid] = (
+                start_date,
+                end_date,
+                ac_date,
+                symbol_to_upper(symbol),
+                calendar.name,
+                symbol,
+            )
         # A df with 1 bar crashes zipline/data/bcolz_minute_bars.py", line 747
         # pd.Timestamp(dts[0]), direction="previous"
         if len(df) > 1:
@@ -438,6 +356,73 @@ def process_minute_aggregates(
         else:
             print(f" WARNING: Not enough data post reindex for {symbol=} {sid=}")
     return
+
+
+def polygon_equities_bundle_minute(
+    environ,
+    asset_db_writer,
+    minute_bar_writer,
+    daily_bar_writer,
+    adjustment_writer,
+    calendar,
+    start_session,
+    end_session,
+    cache,
+    show_progress,
+    output_dir,
+):
+    config = PolygonConfig(
+        environ=environ,
+        calendar_name=calendar.name,
+        start_session=start_session,
+        end_session=end_session,
+        agg_time="minute",
+    )
+    assert calendar == config.calendar
+
+    metadata = pd.DataFrame(
+        columns=(
+            "start_date",
+            "end_date",
+            "auto_close_date",
+            "symbol",
+            "exchange",
+            "asset_name",
+        )
+    )
+
+    # aggregates = generate_all_aggs_from_csv(
+    #     config, calendar, start_session, end_session
+    # )
+
+    schema, tables = generate_csv_agg_tables(config)
+
+    ticker_to_sid = {}
+    dates_with_data = set()
+
+    minute_bar_writer.write(
+        process_minute_aggregates(
+            tables,
+            calendar.sessions_minutes(start_session, end_session),
+            metadata,
+            calendar,
+            ticker_to_sid,
+            dates_with_data,
+        ),
+        show_progress=show_progress,
+    )
+
+    # Write the metadata
+    asset_db_writer.write(equities=metadata)
+
+    # Load splits and dividends
+    first_start_end = min(dates_with_data)
+    last_end_date = max(dates_with_data)
+    splits = load_splits(config, first_start_end, last_end_date, ticker_to_sid)
+    dividends = load_dividends(config, first_start_end, last_end_date, ticker_to_sid)
+
+    # Write splits and dividends
+    adjustment_writer.write(splits=splits, dividends=dividends)
 
 
 def register_polygon_equities_bundle(

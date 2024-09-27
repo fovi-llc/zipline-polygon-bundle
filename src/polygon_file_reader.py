@@ -2,7 +2,7 @@ import os
 import glob
 from concurrent.futures import ProcessPoolExecutor
 from config import PolygonConfig
-from pyarrow import csv
+import pandas as pd
 
 
 def convert_timestamp(x):
@@ -33,7 +33,7 @@ def convert_csv_to_parquet(path, extension, compression):
             path,
             compression=compression,
             converters={"window_start": convert_timestamp},
-            dtype={"ticker": 'str'},
+            dtype={"ticker": "str"},
         )
         # bars_df["ticker"] = bars_df["ticker"].astype(str)
         # bars_df.info()
@@ -65,9 +65,7 @@ def process_all_csv_to_parquet(
 ):
     """Big CSV files are very slow to read.  So we only read them once and convert them to Parquet."""
     csv_pattern = f"**/*{extension}" if recursive else f"*{extension}"
-    paths = list(
-        glob.glob(os.path.join(aggs_dir, csv_pattern), recursive=recursive)
-    )
+    paths = list(glob.glob(os.path.join(aggs_dir, csv_pattern), recursive=recursive))
     if force:
         print(f"Removing Parquet files that may exist for {len(paths)} CSV files.")
         for path in paths:
@@ -86,9 +84,7 @@ def process_all_csv_to_parquet(
             print(f"Skipping {csv_file_count - len(paths)} already converted files.")
     if max_workers == 0:
         for path in paths:
-            convert_csv_to_parquet(
-                path, extension=extension, compression=compression
-            )
+            convert_csv_to_parquet(path, extension=extension, compression=compression)
     else:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             executor.map(
@@ -101,5 +97,7 @@ def process_all_csv_to_parquet(
 
 if __name__ == "__main__":
     # os.environ["POLYGON_DATA_DIR"] = "/Volumes/Oahu/Mirror/files.polygon.io"
-    config = PolygonConfig(environ=os.environ, calendar_name="XNYS", start_session=None, end_session=None)
+    config = PolygonConfig(
+        environ=os.environ, calendar_name="XNYS", start_session=None, end_session=None
+    )
     process_all_csv_to_parquet(config.aggs_dir)
