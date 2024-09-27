@@ -18,6 +18,12 @@ import logging
 # TODO: Change warnings to be relative to number of days in the range.
 
 
+def symbol_to_upper(s: str) -> str:
+    if s.isupper():
+        return s
+    return "".join(map(lambda c: ("^" + c.upper()) if c.islower() else c, s))
+
+
 def load_polygon_splits(
     config: PolygonConfig, first_start_end: datetime.date, last_end_date: datetime.date
 ) -> pd.DataFrame:
@@ -139,38 +145,32 @@ def generate_all_agg_tables_from_csv(
         yield table
 
 
-def symbol_to_upper(s: str) -> str:
-    return "".join(map(lambda c: ("^" + c.upper()) if c.islower() else c, s))
-
-
 def process_day_aggregates(
-    aggregates,
+    table,
     sessions,
     metadata,
     calendar,
-    ticker_to_sid: dict[str, int],
+    symbol_to_sid: dict[str, int],
     dates_with_data: set,
 ):
-    table = aggregates.to_table()
-    table = table.rename_columns({"ticker": "symbol", "window_start": "day"})
-    table = table.sort_by([("symbol", "ascending")])
-    symbols = sorted(set(table.column("symbol").to_pylist()))
-    for sid, symbol in enumerate(symbols):
-        ticker_to_sid[symbol] = sid
+    for symbol, sid in symbol_to_sid.items():
         df = table.filter(
             pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)
         ).to_pandas()
+        # The SQL schema zipline uses for symbols ignores case
+        symbol_escaped = symbol_to_upper(symbol)
+        df["symbol"] = symbol_escaped
         df["day"] = pd.to_datetime(df["day"].dt.date)
         df = df.set_index("day")
-        # The SQL schema zipline uses for symbols ignores case
-        if not symbol.isupper():
-            df["symbol"] = symbol_to_upper(symbol)
-        # Remove duplicates
-        df = df[~df.index.duplicated()]
+        if not df.index.is_monotonic_increasing:
+            print(f" INFO: {symbol=} {sid=} not monotonic increasing")
+            df.sort_index(inplace=True)
+            # Remove duplicates
+            df = df[~df.index.duplicated(keep='first')]
         # Take days as per calendar
         df = df[df.index.isin(sessions)]
         if len(df) < 2:
-            print(f" WARNING: Not enough data for {symbol}")
+            print(f" WARNING: Not enough data for {symbol=} {sid=}")
             # day_writer apparently is okay with these, just minute_writer barfs.
             # continue
         # Check first and last date.
@@ -187,11 +187,11 @@ def process_day_aggregates(
         df["transactions"] = df["transactions"].fillna(0)
         # Forward fill missing price data (better than backfill)
         df.ffill(inplace=True)
-        # Back fill missing data (maybe necessary for the first day)
+        # Back fill missing data (maybe necessary for before the first day bar)
         df.bfill(inplace=True)
         # There should be no missing data
         if df.isnull().sum().sum() > 0:
-            print(f" WARNING: Missing data for {symbol}")
+            print(f" WARNING: Missing data for {symbol=} {sid=}")
 
         # The auto_close date is the day after the last trade.
         ac_date = end_date + pd.Timedelta(days=1)
@@ -201,7 +201,7 @@ def process_day_aggregates(
             start_date,
             end_date,
             ac_date,
-            symbol_to_upper(symbol),
+            symbol_escaped,
             calendar.name,
             symbol,
         )
@@ -234,6 +234,9 @@ def polygon_equities_bundle_day(
     concat_all_aggs_from_csv(config)
     aggregates = pyarrow.dataset.dataset(config.by_ticker_hive_dir)
 
+    # Zipline uses case-insensitive symbols, so we need to convert them to uppercase with a ^ prefix when lowercase.
+    # This is because the SQL schema zipline uses for symbols ignores case.
+    # We put the original symbol in the asset_name field.
     metadata = pd.DataFrame(
         columns=(
             "start_date",
@@ -244,18 +247,25 @@ def polygon_equities_bundle_day(
             "asset_name",
         )
     )
-    ticker_to_sid = {}
+
+    table = aggregates.to_table()
+    table = table.rename_columns({"ticker": "symbol", "window_start": "day"})
+    # Get all the symbols in the table by using value_counts to tabulate the unique values.
+    # pyarrow.Table.column returns a pyarrow.ChunkedArray.
+    # https://arrow.apache.org/docs/python/generated/pyarrow.ChunkedArray.html#pyarrow.ChunkedArray.value_counts
+    symbols = sorted(table.column("symbol").value_counts().field(0).to_pylist())
+    symbol_to_sid = {symbol: sid for sid, symbol in enumerate(symbols)}
     dates_with_data = set()
 
     # Get data for all stocks and write to Zipline
     daily_bar_writer.write(
         process_day_aggregates(
-            aggregates,
-            calendar.sessions_in_range(start_session, end_session),
-            metadata,
-            calendar,
-            ticker_to_sid,
-            dates_with_data,
+            table=table,
+            sessions=calendar.sessions_in_range(start_session, end_session),
+            metadata=metadata,
+            calendar=calendar,
+            symbol_to_sid=symbol_to_sid,
+            dates_with_data=dates_with_data,
         ),
         show_progress=show_progress,
     )
@@ -266,8 +276,8 @@ def polygon_equities_bundle_day(
     # Load splits and dividends
     first_start_end = min(dates_with_data)
     last_end_date = max(dates_with_data)
-    splits = load_splits(config, first_start_end, last_end_date, ticker_to_sid)
-    dividends = load_dividends(config, first_start_end, last_end_date, ticker_to_sid)
+    splits = load_splits(config, first_start_end, last_end_date, symbol_to_sid)
+    dividends = load_dividends(config, first_start_end, last_end_date, symbol_to_sid)
 
     # Write splits and dividends
     adjustment_writer.write(splits=splits, dividends=dividends)
