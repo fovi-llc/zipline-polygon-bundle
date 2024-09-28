@@ -52,7 +52,7 @@ def load_polygon_splits(
         # We will always load from the file to avoid any chance of weird errors.
     if os.path.exists(splits_path):
         splits = pd.read_parquet(splits_path)
-        print(f"Loaded {len(splits)} splits from {splits_path}")
+        print(f"Loaded {len(splits)=} from {splits_path}")
         if len(splits) < expected_split_count:
             logging.warning(
                 f"Only got {len(splits)=} from Polygon list_splits (expected {expected_split_count=}).  "
@@ -79,7 +79,6 @@ def load_splits(
     splits["split_to"] = splits["split_to"].astype(float)
     splits["ratio"] = splits["split_from"] / splits["split_to"]
     splits.drop(columns=["ticker", "split_from", "split_to"], inplace=True)
-    splits.info()
     return splits
 
 
@@ -107,7 +106,7 @@ def load_polygon_dividends(
         # We will always load from the file to avoid any chance of weird errors.
     if os.path.exists(dividends_path):
         dividends = pd.read_parquet(dividends_path)
-        print(f"Loaded {len(dividends)} splits from {dividends_path}")
+        print(f"Loaded {len(dividends)=} from {dividends_path}")
         if len(dividends) < 10000:
             logging.error(f"Only found {len(dividends)=} at {dividends_path}")
         return dividends
@@ -139,7 +138,6 @@ def load_dividends(
     dividends.drop(
         columns=["ticker", "frequency", "currency", "dividend_type"], inplace=True
     )
-    dividends.info()
     return dividends
 
 
@@ -150,6 +148,53 @@ def generate_all_agg_tables_from_csv(
     for table in tables:
         table = table.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
         yield table
+
+
+# def remove_duplicated_index(df: pd.DataFrame) -> pd.DataFrame:
+#     duplicated_index = df.index.duplicated(keep=False)
+#     if not duplicated_index.any():
+#         return df
+#     # Find duplicate index values (date) with zero volume or transactions
+#     duplicated_index_with_zero_activity = duplicated_index & (
+#         df["volume"] == 0) | (df["transactions"] == 0)
+#     if duplicated_index_with_zero_activity.any():
+#         print(
+#             f" WARNING: Got dupes with zero activity {df[duplicated_index_with_zero_activity]=}"
+#         )
+#         df = df[~duplicated_index_with_zero_activity]
+#         duplicated_index = df.index.duplicated(keep=False)
+#         if not duplicated_index.any():
+#             return df
+#     print(f" WARNING: Dropping dupes {df[duplicated_index]=}")
+#     df = df[df.index.duplicated(keep="first")]
+#     return df
+
+
+def remove_duplicated_index(df: pd.DataFrame) -> pd.DataFrame:
+    duplicated_index = df.index.duplicated(keep=False)
+    if not duplicated_index.any():
+        return df
+    duplicates = df[duplicated_index]
+    print()
+    if duplicates["symbol"].nunique() != 1:
+        print(f"ERROR: {duplicates['symbol'].unique()=}")
+    duplicate_index_values = duplicates.index.values
+    print(f"WARNING: Dropping dupes df[duplicated_index]=\n{duplicates}")
+    df = df.groupby(df.index).agg(
+        {
+            "symbol": "first",
+            "volume": "sum",
+            "open": "first",
+            "close": "last",
+            "high": "max",
+            "low": "min",
+            "transactions": "sum",
+        }
+    )
+    print(
+        f"WARNING: Aggregated dupes df=\n{df[df.index.isin(duplicate_index_values)]}"
+    )
+    return df
 
 
 def process_day_aggregates(
@@ -176,19 +221,26 @@ def process_day_aggregates(
             df = df[~df.index.duplicated(keep="first")]
         # Take days as per calendar
         df = df[df.index.isin(sessions)]
-        if len(df) < 2:
-            print(f" WARNING: Not enough data for {symbol=} {sid=}")
-            # day_writer apparently is okay with these, just minute_writer barfs.
-            # continue
+        df = remove_duplicated_index(df)
+
         # Check first and last date.
         start_date = df.index[0]
         dates_with_data.add(start_date.date())
         end_date = df.index[-1]
         dates_with_data.add(end_date.date())
-        # Synch to the official exchange calendar
-        df = df.reindex(sessions.tz_localize(None))[
-            start_date:end_date
-        ]  # tz_localize(None)
+        try:
+            duplicated_index = df.index.duplicated(keep=False)
+            df_with_duplicates = df[duplicated_index]
+            if len(df_with_duplicates) > 0:
+                print(f" WARNING: {symbol=} {sid=} {len(df_with_duplicates)=}")
+                df_with_duplicates.info()
+                print(df_with_duplicates)
+            # Synch to the official exchange calendar
+            df = df.reindex(sessions.tz_localize(None))
+        except ValueError as e:
+            print(f" ERROR: {symbol=} {sid=} {e}")
+            print(f"{start_date=} {end_date=} {sessions[0]=} {sessions[-1]=}")
+            df.info()
         # Missing volume and transactions are zero
         df["volume"] = df["volume"].fillna(0)
         df["transactions"] = df["transactions"].fillna(0)
