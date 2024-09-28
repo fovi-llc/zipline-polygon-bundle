@@ -68,34 +68,57 @@ def load_splits(
 
 
 def load_polygon_dividends(
-    config: PolygonConfig, first_start_end: datetime.date, last_end_date: datetime.date
+    config: PolygonConfig, first_start_date: datetime.date, last_end_date: datetime.date
 ) -> pd.DataFrame:
     dividends_path = config.api_cache_path(
-        start_date=first_start_end, end_date=last_end_date, filename="list_dividends"
+        start_date=first_start_date, end_date=last_end_date, filename="list_dividends"
     )
     if not os.path.exists(dividends_path):
         client = polygon.RESTClient(api_key=config.api_key)
         dividends = client.list_dividends(
             limit=1000,
-            record_date_gte=first_start_end,
+            record_date_gte=first_start_date,
             pay_date_lt=last_end_date + datetime.timedelta(days=1),
         )
         if dividends is HTTPResponse:
             raise ValueError(f"Polygon.list_dividends bad HTTPResponse: {dividends}")
         dividends = pd.DataFrame(dividends)
-        print(f"Got {len(dividends)=} from Polygon list_dividends.")
-        if len(dividends) < 10000:
-            logging.error(f"Only got {len(dividends)=} from Polygon list_dividends.")
         os.makedirs(os.path.dirname(dividends_path), exist_ok=True)
         dividends.to_parquet(dividends_path)
-        # We will always load from the file to avoid any chance of weird errors.
+        print(f"Wrote {len(dividends)=} from Polygon list_dividends to {dividends_path=}")
+        # if len(dividends) < 10000:
+        #     logging.error(f"Only got {len(dividends)=} from Polygon list_dividends.")
+    # We will always load from the file to avoid any chance of weird errors.
     if os.path.exists(dividends_path):
         dividends = pd.read_parquet(dividends_path)
-        print(f"Loaded {len(dividends)=} from {dividends_path}")
-        if len(dividends) < 10000:
-            logging.error(f"Only found {len(dividends)=} at {dividends_path}")
+        # print(f"Loaded {len(dividends)=} from {dividends_path}")
+        # if len(dividends) < 10000:
+        #     logging.error(f"Only found {len(dividends)=} at {dividends_path}")
         return dividends
     raise ValueError(f"Failed to load dividends from {dividends_path}")
+
+
+def load_chunked_polygon_dividends(
+    config: PolygonConfig, first_start_end: datetime.date, last_end_date: datetime.date
+) -> pd.DataFrame:
+    dividends_list = []
+    next_start_end = first_start_end
+    while next_start_end < last_end_date:
+        # We want at most a month of dividends at a time.  They should end on the last day of the month.
+        # So the next_end_date is the day before the first day of the next month.
+        first_of_next_month = datetime.date(
+            next_start_end.year + (next_start_end.month // 12),
+            (next_start_end.month % 12) + 1,
+            1,
+        )
+        next_end_date = first_of_next_month - datetime.timedelta(days=1)
+        if next_end_date > last_end_date:
+            next_end_date = last_end_date
+        dividends_list.append(load_polygon_dividends(
+            config, next_start_end, next_end_date
+        ))
+        next_start_end = next_end_date + datetime.timedelta(days=1)
+    return pd.concat(dividends_list)
 
 
 def load_dividends(
@@ -104,7 +127,7 @@ def load_dividends(
     last_end_date: datetime.date,
     ticker_to_sid: dict[str, int],
 ) -> pd.DataFrame:
-    dividends = load_polygon_dividends(config, first_start_end, last_end_date)
+    dividends = load_chunked_polygon_dividends(config, first_start_end, last_end_date)
     dividends["sid"] = dividends["ticker"].apply(lambda t: ticker_to_sid.get(t, pd.NA))
     dividends.dropna(how="any", inplace=True)
     dividends["sid"] = dividends["sid"].astype("int64")
