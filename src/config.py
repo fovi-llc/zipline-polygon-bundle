@@ -69,10 +69,10 @@ class PolygonConfig:
             if self.agg_time == "minute"
             else self.day_by_ticker_dir
         )
-        self.by_ticker_hive_dir = os.path.join(
-            self.by_ticker_dir,
-            f"{self.agg_time}_{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.hive",
-        )
+        # self.by_ticker_hive_dir = os.path.join(
+        #     self.by_ticker_dir,
+        #     f"{self.agg_time}_{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.hive",
+        # )
         self.cache_dir = os.path.join(self.asset_files_dir, "api_cache")
 
     @property
@@ -86,6 +86,15 @@ class PolygonConfig:
         os.makedirs(ticker_year_dir, exist_ok=True)
         return os.path.join(
             ticker_year_dir, f"tickers_{date.date().isoformat()}.parquet"
+        )
+    
+    def file_path_to_name(self, path: str):
+        return os.path.basename(path).removesuffix(".gz").removesuffix(".csv")
+
+    def by_ticker_aggs_arrow_dir(self, first_path: str, last_path: str):
+        return os.path.join(
+            self.by_ticker_dir,
+            f"{self.file_path_to_name(first_path)}_{self.file_path_to_name(last_path)}.arrow",
         )
 
     def api_cache_path(

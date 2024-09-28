@@ -24,7 +24,7 @@ def symbol_to_upper(s: str) -> str:
 def generate_all_agg_tables_from_csv(
     config: PolygonConfig,
 ):
-    schema, tables = generate_csv_agg_tables(config)
+    paths, schema, tables = generate_csv_agg_tables(config)
     for table in tables:
         table = table.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
         yield table
@@ -50,16 +50,16 @@ def generate_all_agg_tables_from_csv(
 #     return df
 
 
-def remove_duplicated_index(df: pd.DataFrame) -> pd.DataFrame:
+def aggregate_multiple_aggs_per_date(df: pd.DataFrame) -> pd.DataFrame:
     duplicated_index = df.index.duplicated(keep=False)
     if not duplicated_index.any():
         return df
     duplicates = df[duplicated_index]
+    duplicate_index_values = duplicates.index.values
     print()
     if duplicates["symbol"].nunique() != 1:
-        print(f"ERROR: {duplicates['symbol'].unique()=}")
-    duplicate_index_values = duplicates.index.values
-    print(f"WARNING: Dropping dupes df[duplicated_index]=\n{duplicates}")
+        logging.error(f"{duplicates['symbol'].unique()=} {duplicate_index_values=}")
+    logging.warning(f"Aggregating dupes df[df.index.duplicated(keep=False)]=\n{duplicates}")
     df = df.groupby(df.index).agg(
         {
             "symbol": "first",
@@ -101,8 +101,8 @@ def process_day_aggregates(
             df = df[~df.index.duplicated(keep="first")]
         # Take days as per calendar
         df = df[df.index.isin(sessions)]
-        df = remove_duplicated_index(df)
-
+        # 2019-08-13 has a bunch of tickers with multiple day aggs per date
+        df = aggregate_multiple_aggs_per_date(df)
         # Check first and last date.
         start_date = df.index[0]
         dates_with_data.add(start_date.date())
@@ -169,9 +169,8 @@ def polygon_equities_bundle_day(
         agg_time="day",
     )
 
-    if not os.path.exists(config.by_ticker_hive_dir):
-        concat_all_aggs_from_csv(config)
-    aggregates = pyarrow.dataset.dataset(config.by_ticker_hive_dir)
+    by_ticker_aggs_arrow_dir = concat_all_aggs_from_csv(config)
+    aggregates = pyarrow.dataset.dataset(by_ticker_aggs_arrow_dir)
 
     # Zipline uses case-insensitive symbols, so we need to convert them to uppercase with a ^ prefix when lowercase.
     # This is because the SQL schema zipline uses for symbols ignores case.
@@ -346,7 +345,7 @@ def polygon_equities_bundle_minute(
     #     config, calendar, start_session, end_session
     # )
 
-    schema, tables = generate_csv_agg_tables(config)
+    paths, schema, tables = generate_csv_agg_tables(config)
 
     ticker_to_sid = {}
     dates_with_data = set()
@@ -379,7 +378,7 @@ def polygon_equities_bundle_minute(
 def register_polygon_equities_bundle(
     bundlename,
     start_session=None,
-    end_session="now",
+    end_session=None,
     calendar_name="XNYS",
     agg_time="day",
     # ticker_list=None,

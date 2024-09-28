@@ -14,7 +14,7 @@ import pandas as pd
 
 
 def generate_tables_from_csv_files(
-    paths: Iterator,
+    paths: list,
     schema: pa.Schema,
     start_timestamp: pd.Timestamp,
     limit_timestamp: pd.Timestamp,
@@ -28,10 +28,6 @@ def generate_tables_from_csv_files(
     )
     csv_schema = empty_table.schema
 
-    print(f"{len(paths)=}")
-    if len(paths) > 0:
-        print(f"{paths[0]=}")
-        print(f"{paths[-1]=}")
     tables_read_count = 0
     skipped_table_count = 0
     for path in paths:
@@ -87,6 +83,11 @@ def generate_csv_agg_tables(
         )
     )
 
+    print(f"{len(paths)=}")
+    if len(paths) > 0:
+        print(f"{paths[0]=}")
+        print(f"{paths[-1]=}")
+
     # Polygon Aggregate flatfile timestamps are in nanoseconds (like trades), not milliseconds as the docs say.
     # I make the timestamp timezone-aware because that's how Unix timestamps work and it may help avoid mistakes.
     timestamp_type = pa.timestamp("ns", tz="UTC")
@@ -119,7 +120,7 @@ def generate_csv_agg_tables(
         ]
     )
 
-    return polygon_aggs_schema, generate_tables_from_csv_files(
+    return paths, polygon_aggs_schema, generate_tables_from_csv_files(
         paths=paths,
         schema=polygon_aggs_schema,
         start_timestamp=config.start_timestamp,
@@ -136,26 +137,30 @@ def generate_batches_from_tables(tables):
 def concat_all_aggs_from_csv(
     config: PolygonConfig,
     overwrite: bool = False,
-) -> None:
-    if os.path.exists(config.by_ticker_hive_dir):
-        if overwrite:
-            print(f"Removing {config.by_ticker_hive_dir=}")
-            shutil.rmtree(config.by_ticker_hive_dir)
-        else:
-            raise FileExistsError(
-                f"{config.by_ticker_hive_dir=} exists and overwrite is False."
-            )
+) -> str:
+    paths, schema, tables = generate_csv_agg_tables(config)
 
-    schema, tables = generate_csv_agg_tables(config)
+    if len(paths) < 1:
+        raise ValueError(f"No Polygon CSV flat files found in {config.aggs_dir=}")
+    by_ticker_aggs_arrow_dir = config.by_ticker_aggs_arrow_dir(paths[0], paths[-1])
+    if os.path.exists(by_ticker_aggs_arrow_dir):
+        if overwrite:
+            print(f"Removing {by_ticker_aggs_arrow_dir=}")
+            shutil.rmtree(by_ticker_aggs_arrow_dir)
+        else:
+            print(f"Found existing {by_ticker_aggs_arrow_dir=}")
+            return by_ticker_aggs_arrow_dir
+
     # scanner = pa_ds.Scanner.from_batches(source=generate_batches_from_tables(tables), schema=schema)
     pa_ds.write_dataset(
         generate_batches_from_tables(tables),
         schema=schema,
-        base_dir=config.by_ticker_hive_dir,
+        base_dir=by_ticker_aggs_arrow_dir,
         format="parquet",
         existing_data_behavior="overwrite_or_ignore",
     )
-    print(f"Concatenated aggregates to {config.by_ticker_hive_dir=}")
+    print(f"Concatenated aggregates to {by_ticker_aggs_arrow_dir=}")
+    return by_ticker_aggs_arrow_dir
 
 
 if __name__ == "__main__":
