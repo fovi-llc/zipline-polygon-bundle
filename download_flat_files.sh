@@ -89,3 +89,19 @@ for year in 2024 2023 2022 2021 2020; do \
     rclone copy -P s3polygon:flatfiles/us_options_opra/trades_v1/$year \
     $POLYGON_DATA_DIR/flatfiles/us_options_opra/trades_v1/$year; \
 done
+
+
+for year in 2024; do \
+    rclone copy -P s3polygon:flatfiles/us_stocks_sip/day_aggs_v1/$year \
+    $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/day_aggs_v1/$year; \
+    rclone copy -P s3polygon:flatfiles/us_stocks_sip/minute_aggs_v1/$year \
+    $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/minute_aggs_v1/$year; \
+    rclone copy -P s3polygon:flatfiles/us_options_opra/day_aggs_v1/$year \
+    $POLYGON_DATA_DIR/flatfiles/us_options_opra/day_aggs_v1/$year; \
+    rclone copy -P s3polygon:flatfiles/us_options_opra/minute_aggs_v1/$year \
+    $POLYGON_DATA_DIR/flatfiles/us_options_opra/minute_aggs_v1/$year; \
+    rclone copy -cP s3polygon:flatfiles/us_stocks_sip/trades_v1/$year \
+    $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/trades_v1/$year; \
+    rclone copy -P s3polygon:flatfiles/us_options_opra/trades_v1/$year \
+    $POLYGON_DATA_DIR/flatfiles/us_options_opra/trades_v1/$year; \
+done
