@@ -1,13 +1,26 @@
-# zipline_bundle_polygon
-A zipline-reloaded (https://github.com/stefan-jansen/zipline-reloaded) data ingestion bundle for [Polygon.io](https://polygon.io/).
+# zipline-polygon-bundle
+`zipline-polygon-bundle` is a `zipline-reloaded` (https://github.com/stefan-jansen/zipline-reloaded) data ingestion bundle for [Polygon.io](https://polygon.io/).
 
-# Ingest data from Polygon into Zipline
+## GitHub
+https://github.com/fovi-llc/zipline-polygon-bundle
 
 ## Resources
 
 Get a subscription to https://polygon.io/ for an API key and access to flat files.
 
 https://polygon.io/knowledge-base/article/how-to-get-started-with-s3
+
+Quantopian's Zipline backtester revived by Stefan Jansen: https://github.com/stefan-jansen/zipline-reloaded
+
+Stefan's excellent book *Machine Learning for Algorithmic Trading*: https://ml4trading.io/
+
+*Trading Evolved* by Andreas Clenow is a gentler introduction to Zipline Reloaded: https://www.followingthetrend.com/trading-evolved/
+
+Code from *Trading Evolved* with some small updates for convenience: https://github.com/fovi-llc/trading_evolved
+
+One of the modifications I've made to that code is so that some of the notebooks can be run on Colab with a minimum of fuss: https://github.com/fovi-llc/trading_evolved/blob/main/Chapter%207%20-%20Backtesting%20Trading%20Strategies/First%20Zipline%20Backtest.ipynb
+
+# Ingest data from Polygon.io into Zipline
 
 ## Set up your rclone (https://rclone.org/) configuration
 ```bash
@@ -40,15 +53,31 @@ register_polygon_equities_bundle(
 ```
 
 ## Install the Zipline Polygon.io Bundle PyPi package and check that it works.
+Listing bundles will show if everything is working correctly.
 ```bash
 pip install zipline_polygon_bundle
 zipline -e extension.py bundles
+```
+stdout:
+```
+csvdir <no ingestions>
+polygon <no ingestions>
+quandl <no ingestions>
+quantopian-quandl <no ingestions>
 ```
 
 ## Ingest the Polygon.io data.  The API key is needed for the split and dividend data.
 ```bash
 export POLYGON_API_KEY=<your API key here>
 zipline -e extension.py ingest -b polygon
+```
+
+### Cleaning up bad ingests
+After a while you may wind up with old (or empty because of an error during ingestion) bundles cluttering
+up the list and could waste space (although old bundles may be useful for rerunning old backtests).
+To remove all but the last ingest (say after your first successful ingest after a number of false starts) you could use:
+```bash
+zipline -e extension.py clean -b polygon --keep-last 1
 ```
 
 # License is Affero General Public License v3 (AGPL v3)
