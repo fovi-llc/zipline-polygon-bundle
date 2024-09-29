@@ -8,6 +8,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: publishing
     steps:
     - uses: actions/checkout@v3
     
