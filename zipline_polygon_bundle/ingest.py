@@ -1,14 +1,13 @@
 from zipline.data.bundles import register
 
-from config import PolygonConfig
-from concat_all_aggs import concat_all_aggs_from_csv, generate_csv_agg_tables
-from adjustments import load_splits, load_dividends
+from .config import PolygonConfig
+from .concat_all_aggs import concat_all_aggs_from_csv, generate_csv_agg_tables
+from .adjustments import load_splits, load_dividends
 
 import pyarrow
 import pyarrow.compute
 
 import pandas as pd
-import os
 import logging
 
 

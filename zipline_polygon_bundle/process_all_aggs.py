@@ -1,6 +1,7 @@
+from .config import PolygonConfig
+
 import os
 import glob
-from config import PolygonConfig
 import pandas as pd
 import fastparquet as fp
 from pathlib import Path

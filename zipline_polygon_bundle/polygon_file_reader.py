@@ -1,7 +1,8 @@
+from .config import PolygonConfig
+
 import os
 import glob
 from concurrent.futures import ProcessPoolExecutor
-from config import PolygonConfig
 import pandas as pd
 
 

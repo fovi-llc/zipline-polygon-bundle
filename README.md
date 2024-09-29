@@ -1,11 +1,6 @@
 # zipline_bundle_polygon
 A zipline-reloaded (https://github.com/stefan-jansen/zipline-reloaded) data ingestion bundle for [Polygon.io](https://polygon.io/).
 
-# License is Affero General Public License v3 (AGPL v3)
-The content of this project is Copyright (C) 2024 Fovi LLC and authored by James P. White (https://www.linkedin.com/in/jamespaulwhite/).  It is distributed under the terms of the GNU AFFERO GENERAL PUBLIC LICENSE (AGPL) Version 3 (See LICENSE file).
-
-The AGPL doesn't put any restrictions on personal use but people using this in a service for others have obligations.  If you have commerical purposes and those distribution requirements don't work for you, feel free to contact me (mailto:jim@fovi.com) about other licensing terms.
-
 # Ingest data from Polygon into Zipline
 
 ## Resources
@@ -55,3 +50,8 @@ zipline -e extension.py bundles
 export POLYGON_API_KEY=<your API key here>
 zipline -e extension.py ingest -b polygon
 ```
+
+# License is Affero General Public License v3 (AGPL v3)
+The content of this project is Copyright (C) 2024 Fovi LLC and authored by James P. White (https://www.linkedin.com/in/jamespaulwhite/).  It is distributed under the terms of the GNU AFFERO GENERAL PUBLIC LICENSE (AGPL) Version 3 (See LICENSE file).
+
+The AGPL doesn't put any restrictions on personal use but people using this in a service for others have obligations.  If you have commerical purposes and those distribution requirements don't work for you, feel free to contact me (mailto:jim@fovi.com) about other licensing terms.

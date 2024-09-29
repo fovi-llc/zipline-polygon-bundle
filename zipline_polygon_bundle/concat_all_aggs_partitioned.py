@@ -1,5 +1,6 @@
+from .config import PolygonConfig
+
 from typing import Iterator
-from config import PolygonConfig
 
 import argparse
 import glob

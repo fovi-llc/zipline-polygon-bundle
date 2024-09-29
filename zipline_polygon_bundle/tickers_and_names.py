@@ -1,4 +1,4 @@
-from config import PolygonConfig
+from .config import PolygonConfig
 
 import datetime
 import os

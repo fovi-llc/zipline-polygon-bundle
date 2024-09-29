@@ -1,6 +1,7 @@
+from .config import PolygonConfig
+
 import shutil
 from typing import Iterator, Tuple
-from config import PolygonConfig
 
 import argparse
 import glob
