@@ -12,6 +12,7 @@ from urllib3 import HTTPResponse
 def load_polygon_splits(
     config: PolygonConfig, first_start_end: datetime.date, last_end_date: datetime.date
 ) -> pd.DataFrame:
+    # N.B. If the schema changes then the filename should change.  We're on v3 now.
     splits_path = config.api_cache_path(
         start_date=first_start_end, end_date=last_end_date, filename="list_splits"
     )
@@ -70,6 +71,7 @@ def load_splits(
 def load_polygon_dividends(
     config: PolygonConfig, first_start_date: datetime.date, last_end_date: datetime.date
 ) -> pd.DataFrame:
+    # N.B. If the schema changes then the filename should change.  We're on v3 now.
     dividends_path = config.api_cache_path(
         start_date=first_start_date, end_date=last_end_date, filename="list_dividends"
     )
