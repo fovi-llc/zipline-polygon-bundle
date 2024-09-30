@@ -102,6 +102,8 @@ def process_day_aggregates(
         df = df[df.index.isin(sessions)]
         # 2019-08-13 has a bunch of tickers with multiple day aggs per date
         df = aggregate_multiple_aggs_per_date(df)
+        if len(df) < 1:
+            continue
         # Check first and last date.
         start_date = df.index[0]
         dates_with_data.add(start_date.date())
@@ -143,7 +145,8 @@ def process_day_aggregates(
             calendar.name,
             symbol,
         )
-        yield sid, df
+        if len(df) > 0:
+            yield sid, df
     return
 
 
