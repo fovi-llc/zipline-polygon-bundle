@@ -58,7 +58,9 @@ def aggregate_multiple_aggs_per_date(df: pd.DataFrame) -> pd.DataFrame:
     print()
     if duplicates["symbol"].nunique() != 1:
         logging.error(f"{duplicates['symbol'].unique()=} {duplicate_index_values=}")
-    logging.warning(f"Aggregating dupes df[df.index.duplicated(keep=False)]=\n{duplicates}")
+    logging.warning(
+        f"Aggregating dupes df[df.index.duplicated(keep=False)]=\n{duplicates}"
+    )
     df = df.groupby(df.index).agg(
         {
             "symbol": "first",
@@ -70,9 +72,7 @@ def aggregate_multiple_aggs_per_date(df: pd.DataFrame) -> pd.DataFrame:
             "transactions": "sum",
         }
     )
-    print(
-        f"WARNING: Aggregated dupes df=\n{df[df.index.isin(duplicate_index_values)]}"
-    )
+    print(f"WARNING: Aggregated dupes df=\n{df[df.index.isin(duplicate_index_values)]}")
     return df
 
 
@@ -150,6 +150,20 @@ def process_day_aggregates(
     return
 
 
+def rename_polygon_to_zipline(table: pyarrow.Table, time_name: str) -> pyarrow.Table:
+    table = table.rename_columns(
+        [
+            (
+                "symbol"
+                if name == "ticker"
+                else time_name if name == "window_start" else name
+            )
+            for name in table.column_names
+        ]
+    )
+    return table
+
+
 def polygon_equities_bundle_day(
     environ,
     asset_db_writer,
@@ -189,7 +203,7 @@ def polygon_equities_bundle_day(
     )
 
     table = aggregates.to_table()
-    table = table.rename_columns({"ticker": "symbol", "window_start": "day"})
+    table = rename_polygon_to_zipline(table, "day")
     # Get all the symbols in the table by using value_counts to tabulate the unique values.
     # pyarrow.Table.column returns a pyarrow.ChunkedArray.
     # https://arrow.apache.org/docs/python/generated/pyarrow.ChunkedArray.html#pyarrow.ChunkedArray.value_counts
