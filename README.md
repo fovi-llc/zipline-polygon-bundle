@@ -22,13 +22,15 @@ One of the modifications I've made to that code is so that some of the notebooks
 
 # Ingest data from Polygon.io into Zipline
 
-## Set up your rclone (https://rclone.org/) configuration
+## Set up your `rclone` (https://rclone.org/) configuration
 ```bash
 export POLYGON_FILE_ENDPOINT=https://files.polygon.io/
-rclone config create s3polygon s3 env_auth=false access_key_id=$POLYGON_S3_Access_ID secret_access_key=$POLYGON_Secret_Access_Key endpoint=$POLYGON_FILE_ENDPOINT
+rclone config create s3polygon s3 env_auth=false endpoint=$POLYGON_FILE_ENDPOINT \
+  access_key_id=$POLYGON_S3_Access_ID secret_access_key=$POLYGON_Secret_Access_Key
 ```
 
-## Get flat files (*.csv.gz) for US Stock daily aggregates.
+## Get flat files (`*.csv.gz`) for US Stock daily aggregates.
+N.B. Minute aggregates are coming soon.  Other assets as I need them or you add them, PR's welcome!
 
 ```bash
 export POLYGON_DATA_DIR=`pwd`/data/files.polygon.io
