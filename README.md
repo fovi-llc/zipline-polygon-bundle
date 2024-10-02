@@ -30,6 +30,9 @@ rclone config create s3polygon s3 env_auth=false endpoint=$POLYGON_FILE_ENDPOINT
 ```
 
 ## Get flat files (`*.csv.gz`) for US Stock daily aggregates.
+The default asset dir is `us_stock_sip` but that can be overriden with the `POLYGON_ASSET_SUBDIR` 
+environment variable if/when Polygon.io adds other markets to flat files.
+
 N.B. Minute aggregates are coming soon.  Other assets as I need them or you add them, PR's welcome!
 
 ```bash

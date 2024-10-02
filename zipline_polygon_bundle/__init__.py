@@ -1,4 +1,4 @@
-from .ingest import (
+from .bundle import (
     register_polygon_equities_bundle,
     symbol_to_upper,
     polygon_equities_bundle_day,
