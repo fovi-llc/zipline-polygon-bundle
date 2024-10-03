@@ -237,18 +237,21 @@ def polygon_equities_bundle_day(
     adjustment_writer.write(splits=splits, dividends=dividends)
 
 
-def process_minute_aggregates(
-    table,
+def process_minute_batch(
+    batch,
     sessions,
     metadata,
     calendar,
     symbol_to_sid: dict[str, int],
     dates_with_data: set,
 ):
-    for symbol, sid in symbol_to_sid.items():
-        df = table.filter(
-            pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)
-        ).to_pandas()
+    batch_df = batch.to_pandas()
+    batch_df.sort_values(by=["symbol", "timestamp"], inplace=True)
+    for symbol, df in batch_df.groupby("symbol"):
+        # print(f"\n{symbol=} {len(df)=} {df['timestamp'].min()} {df['timestamp'].max()}")
+        if symbol not in symbol_to_sid:
+            symbol_to_sid[symbol] = len(symbol_to_sid) + 1
+        sid = symbol_to_sid[symbol]
         # The SQL schema zipline uses for symbols ignores case
         sql_symbol = symbol_to_upper(symbol)
         df["symbol"] = sql_symbol
@@ -256,9 +259,10 @@ def process_minute_aggregates(
         # # Remove duplicates
         # df = df[~df.index.duplicated()]
         # Take minutes as per calendar
+        # len_before = len(df)
         df = df[df.index.isin(sessions)]
         if len(df) < 2:
-            print(f" WARNING: Not enough data for {symbol=} {sid=}")
+            # print(f" WARNING: Not enough data for {symbol=} {sid=} {len(df)=} {len_before=}")
             continue
         # Check first and last date.
         start_date = df.index[0].date()
@@ -298,6 +302,35 @@ def process_minute_aggregates(
             yield sid, df
         else:
             print(f" WARNING: Not enough data post reindex for {symbol=} {sid=}")
+
+
+def process_minute_aggregates(
+    batches,
+    sessions,
+    metadata,
+    calendar,
+    symbol_to_sid: dict[str, int],
+    dates_with_data: set,
+):
+    for batch in batches:
+        print(f" {batch.num_rows=}")
+        batch = batch.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
+        batch = rename_polygon_to_zipline(batch, "timestamp")
+        # print(f"{batch.schema=}")
+        # # Get all the symbols in the table by using value_counts to tabulate the unique values.
+        # # pyarrow.Table.column returns a pyarrow.ChunkedArray.
+        # # https://arrow.apache.org/docs/python/generated/pyarrow.ChunkedArray.html#pyarrow.ChunkedArray.value_counts
+        # symbols = sorted(table.column("symbol").value_counts().field(0).to_pylist())
+        # print(f"{len(symbols)=}")
+        # symbol_to_sid = {symbol: sid for sid, symbol in enumerate(symbols)}
+        yield from process_minute_batch(
+            batch=batch,
+            sessions=sessions,
+            metadata=metadata,
+            calendar=calendar,
+            symbol_to_sid=symbol_to_sid,
+            dates_with_data=dates_with_data,
+        )
     return
 
 
@@ -324,6 +357,12 @@ def polygon_equities_bundle_minute(
 
     by_ticker_aggs_arrow_dir = concat_all_aggs_from_csv(config)
     aggregates = pyarrow.dataset.dataset(by_ticker_aggs_arrow_dir)
+    print(f"{aggregates.schema=}")
+    # 3.5 billion rows for 10 years of minute data.
+    # print(f"{aggregates.count_rows()=}")
+    # Can't sort the dataset because that reads it all into memory.
+    # aggregates = aggregates.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
+    # print("Sorted")
 
     # Zipline uses case-insensitive symbols, so we need to convert them to uppercase with a ^ prefix when lowercase.
     # This is because the SQL schema zipline uses for symbols ignores case.
@@ -339,19 +378,14 @@ def polygon_equities_bundle_minute(
         )
     )
 
-    table = aggregates.to_table()
-    table = rename_polygon_to_zipline(table, "timestamp")
-    # Get all the symbols in the table by using value_counts to tabulate the unique values.
-    # pyarrow.Table.column returns a pyarrow.ChunkedArray.
-    # https://arrow.apache.org/docs/python/generated/pyarrow.ChunkedArray.html#pyarrow.ChunkedArray.value_counts
-    symbols = sorted(table.column("symbol").value_counts().field(0).to_pylist())
-    symbol_to_sid = {symbol: sid for sid, symbol in enumerate(symbols)}
+    symbol_to_sid = {}
     dates_with_data = set()
 
     # Get data for all stocks and write to Zipline
     minute_bar_writer.write(
         process_minute_aggregates(
-            table=table,
+            # batches=aggregates.to_batches(),
+            batches=aggregates.to_batches(batch_size=1000000, use_threads=False),
             sessions=calendar.sessions_minutes(start_session, end_session),
             metadata=metadata,
             calendar=calendar,
