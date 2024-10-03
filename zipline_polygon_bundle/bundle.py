@@ -89,8 +89,8 @@ def process_day_aggregates(
             pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)
         ).to_pandas()
         # The SQL schema zipline uses for symbols ignores case
-        symbol_escaped = symbol_to_upper(symbol)
-        df["symbol"] = symbol_escaped
+        sql_symbol = symbol_to_upper(symbol)
+        df["symbol"] = sql_symbol
         df["day"] = pd.to_datetime(df["day"].dt.date)
         df = df.set_index("day")
         if not df.index.is_monotonic_increasing:
@@ -141,7 +141,7 @@ def process_day_aggregates(
             start_date,
             end_date,
             auto_close_date,
-            symbol_escaped,
+            sql_symbol,
             calendar.name,
             symbol,
         )
@@ -238,27 +238,21 @@ def polygon_equities_bundle_day(
 
 
 def process_minute_aggregates(
-    aggregates,
+    table,
     sessions,
     metadata,
     calendar,
-    ticker_to_sid: dict[str, int],
+    symbol_to_sid: dict[str, int],
     dates_with_data: set,
 ):
-    aggregates = aggregates.rename_columns(
-        {"ticker": "symbol", "window_start": "timestamp"}
-    )
-    for symbol in sorted(set(aggregates.column("symbol").to_pylist())):
-        if symbol not in ticker_to_sid:
-            ticker_to_sid[symbol] = len(ticker_to_sid) + 1
-        sid = ticker_to_sid[symbol]
-        df = aggregates.filter(
+    for symbol, sid in symbol_to_sid.items():
+        df = table.filter(
             pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)
         ).to_pandas()
-        df = df.set_index("timestamp")
         # The SQL schema zipline uses for symbols ignores case
-        if not symbol.isupper():
-            df["symbol"] = symbol_to_upper(symbol)
+        sql_symbol = symbol_to_upper(symbol)
+        df["symbol"] = sql_symbol
+        df = df.set_index("timestamp")
         # # Remove duplicates
         # df = df[~df.index.duplicated()]
         # Take minutes as per calendar
@@ -271,26 +265,9 @@ def process_minute_aggregates(
         dates_with_data.add(start_date)
         end_date = df.index[-1].date()
         dates_with_data.add(end_date)
-        # # Synch to the official exchange calendar
-        # df = df.reindex(sessions.tz_localize(None))
-        # # Missing volume and transactions are zero
-        # df["volume"] = df["volume"].fillna(0)
-        # df["transactions"] = df["transactions"].fillna(0)
-        # df.info()
-        # # Forward fill missing price data (better than backfill)
-        # df.ffill(inplace=True)
-        # df.info()
-        # # Back fill missing data (maybe necessary for the first day)
-        # df.bfill(inplace=True)
-        # df.info()
-        # # There should be no missing data
-        # if len(df) != len(sessions):
-        #     print(f" WARNING: Missing data for {symbol=} {len(df)=} != {len(sessions)=}")
-        # if df.isnull().sum().sum() > 0:
-        #     print(f" WARNING: nulls in data for {symbol=} {df.isnull().sum().sum()}")
 
         # The auto_close date is the day after the last trade.
-        ac_date = end_date + pd.Timedelta(days=1)
+        auto_close_date = end_date + pd.Timedelta(days=1)
 
         # If metadata already has this sid, just extend the end_date and ac_date.
         if sid in metadata.index:
@@ -303,13 +280,13 @@ def process_minute_aggregates(
                     f" ERROR: {symbol=} {sid=} {metadata.loc[sid, 'end_date']=} >= {end_date=}"
                 )
             metadata.loc[sid, "end_date"] = end_date
-            metadata.loc[sid, "auto_close_date"] = ac_date
+            metadata.loc[sid, "auto_close_date"] = auto_close_date
         else:
             # Add a row to the metadata DataFrame. Don't forget to add an exchange field.
             metadata.loc[sid] = (
                 start_date,
                 end_date,
-                ac_date,
+                auto_close_date,
                 symbol_to_upper(symbol),
                 calendar.name,
                 symbol,
@@ -317,7 +294,7 @@ def process_minute_aggregates(
         # A df with 1 bar crashes zipline/data/bcolz_minute_bars.py", line 747
         # pd.Timestamp(dts[0]), direction="previous"
         if len(df) > 1:
-            print(f"\n{symbol=} {sid=} {len(df)=} {df.index[0]=} {df.index[-1]=}")
+            # print(f"\n{symbol=} {sid=} {len(df)=} {df.index[0]=} {df.index[-1]=}")
             yield sid, df
         else:
             print(f" WARNING: Not enough data post reindex for {symbol=} {sid=}")
@@ -344,8 +321,13 @@ def polygon_equities_bundle_minute(
         end_session=end_session,
         agg_time="minute",
     )
-    assert calendar == config.calendar
 
+    by_ticker_aggs_arrow_dir = concat_all_aggs_from_csv(config)
+    aggregates = pyarrow.dataset.dataset(by_ticker_aggs_arrow_dir)
+
+    # Zipline uses case-insensitive symbols, so we need to convert them to uppercase with a ^ prefix when lowercase.
+    # This is because the SQL schema zipline uses for symbols ignores case.
+    # We put the original symbol in the asset_name field.
     metadata = pd.DataFrame(
         columns=(
             "start_date",
@@ -357,23 +339,24 @@ def polygon_equities_bundle_minute(
         )
     )
 
-    # aggregates = generate_all_aggs_from_csv(
-    #     config, calendar, start_session, end_session
-    # )
-
-    paths, schema, tables = generate_csv_agg_tables(config)
-
-    ticker_to_sid = {}
+    table = aggregates.to_table()
+    table = rename_polygon_to_zipline(table, "timestamp")
+    # Get all the symbols in the table by using value_counts to tabulate the unique values.
+    # pyarrow.Table.column returns a pyarrow.ChunkedArray.
+    # https://arrow.apache.org/docs/python/generated/pyarrow.ChunkedArray.html#pyarrow.ChunkedArray.value_counts
+    symbols = sorted(table.column("symbol").value_counts().field(0).to_pylist())
+    symbol_to_sid = {symbol: sid for sid, symbol in enumerate(symbols)}
     dates_with_data = set()
 
+    # Get data for all stocks and write to Zipline
     minute_bar_writer.write(
         process_minute_aggregates(
-            tables,
-            calendar.sessions_minutes(start_session, end_session),
-            metadata,
-            calendar,
-            ticker_to_sid,
-            dates_with_data,
+            table=table,
+            sessions=calendar.sessions_minutes(start_session, end_session),
+            metadata=metadata,
+            calendar=calendar,
+            symbol_to_sid=symbol_to_sid,
+            dates_with_data=dates_with_data,
         ),
         show_progress=show_progress,
     )
@@ -384,8 +367,8 @@ def polygon_equities_bundle_minute(
     # Load splits and dividends
     first_start_end = min(dates_with_data)
     last_end_date = max(dates_with_data)
-    splits = load_splits(config, first_start_end, last_end_date, ticker_to_sid)
-    dividends = load_dividends(config, first_start_end, last_end_date, ticker_to_sid)
+    splits = load_splits(config, first_start_end, last_end_date, symbol_to_sid)
+    dividends = load_dividends(config, first_start_end, last_end_date, symbol_to_sid)
 
     # Write splits and dividends
     adjustment_writer.write(splits=splits, dividends=dividends)
