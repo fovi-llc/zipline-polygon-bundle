@@ -304,37 +304,6 @@ def process_minute_batch(
             print(f" WARNING: Not enough data post reindex for {symbol=} {sid=}")
 
 
-# def process_minute_aggregates(
-#     batches,
-#     sessions,
-#     metadata,
-#     calendar,
-#     symbol_to_sid: dict[str, int],
-#     dates_with_data: set,
-# ):
-#     # We want to do this by Hive partition at a time because each ticker will be complete.
-    # for batch in batches:
-    #     print(f" {batch.num_rows=}")
-    #     batch = batch.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
-    #     batch = rename_polygon_to_zipline(batch, "timestamp")
-    #     # print(f"{batch.schema=}")
-    #     # # Get all the symbols in the table by using value_counts to tabulate the unique values.
-    #     # # pyarrow.Table.column returns a pyarrow.ChunkedArray.
-    #     # # https://arrow.apache.org/docs/python/generated/pyarrow.ChunkedArray.html#pyarrow.ChunkedArray.value_counts
-    #     # symbols = sorted(table.column("symbol").value_counts().field(0).to_pylist())
-    #     # print(f"{len(symbols)=}")
-    #     # symbol_to_sid = {symbol: sid for sid, symbol in enumerate(symbols)}
-    #     yield from process_minute_batch(
-    #         batch=batch,
-    #         sessions=sessions,
-    #         metadata=metadata,
-    #         calendar=calendar,
-    #         symbol_to_sid=symbol_to_sid,
-    #         dates_with_data=dates_with_data,
-    #     )
-#     return
-
-
 def process_minute_aggregates(
     fragments,
     sessions,
@@ -350,13 +319,6 @@ def process_minute_aggregates(
         # table = table.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
         table = rename_polygon_to_zipline(table, "timestamp")
         table = table.sort_by([("symbol", "ascending"), ("timestamp", "ascending")])
-        # print(f"{batch.schema=}")
-        # # Get all the symbols in the table by using value_counts to tabulate the unique values.
-        # # pyarrow.Table.column returns a pyarrow.ChunkedArray.
-        # # https://arrow.apache.org/docs/python/generated/pyarrow.ChunkedArray.html#pyarrow.ChunkedArray.value_counts
-        # symbols = sorted(table.column("symbol").value_counts().field(0).to_pylist())
-        # print(f"{len(symbols)=}")
-        # symbol_to_sid = {symbol: sid for sid, symbol in enumerate(symbols)}
         yield from process_minute_batch(
             table=table,
             sessions=sessions,
