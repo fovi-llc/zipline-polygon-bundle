@@ -69,6 +69,7 @@ class PolygonConfig:
             if self.agg_time == "minute"
             else self.day_by_ticker_dir
         )
+        self.arrow_format = environ.get("POLYGON_ARROW_FORMAT", "parquet" if self.agg_time == "day" else "hive")
         # self.by_ticker_hive_dir = os.path.join(
         #     self.by_ticker_dir,
         #     f"{self.agg_time}_{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.hive",

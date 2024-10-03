@@ -14,6 +14,28 @@ from pyarrow import csv as pa_csv
 import pandas as pd
 
 
+PARTITION_COLUMN_NAME = "part"
+
+
+# To work across all reasonable filesystems, we need to escape the characters in partition keys that are treated weirdly in filenames.
+def partition_key_escape(c: str) -> str:
+    return ("^" + c.upper()) if c.islower() else ("%" + "%02X" % ord(c))
+
+
+def to_partition_key(s: str) -> str:
+    """
+    Partition key is low cardinality and must be filesystem-safe. Currently just the first character.
+    The reason for partitioning is to keep the parquet files from getting too big.
+    10 years of minute aggs for US stocks is 83GB gzipped.  A single parquet would be 62GB on disk.
+    """
+    s = (s + "_")[0:1]
+    if s.isalnum() and s.isupper():
+        return s
+    return "".join(
+        [f"{c if (c.isupper() or c.isdigit()) else partition_key_escape(c)}" for c in s]
+    )
+
+
 def generate_tables_from_csv_files(
     paths: list,
     schema: pa.Schema,
@@ -45,6 +67,16 @@ def generate_tables_from_csv_files(
             "window_start",
             table.column("window_start").cast(schema.field("window_start").type),
         )
+        if schema.field(PARTITION_COLUMN_NAME) is not None:
+            table = table.append_column(
+                PARTITION_COLUMN_NAME,
+                pa.array(
+                    [
+                        to_partition_key(ticker)
+                        for ticker in table.column("ticker").to_pylist()
+                    ]
+                ),
+            )
         expr = (
             pa.compute.field("window_start")
             >= pa.scalar(start_timestamp, type=schema.field("window_start").type)
@@ -120,12 +152,20 @@ def generate_csv_agg_tables(
             pa.field("transactions", pa.int64(), nullable=False),
         ]
     )
+    if config.agg_time == "minute":
+        polygon_aggs_schema = polygon_aggs_schema.append(
+            pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False)
+        )
 
-    return paths, polygon_aggs_schema, generate_tables_from_csv_files(
-        paths=paths,
-        schema=polygon_aggs_schema,
-        start_timestamp=config.start_timestamp,
-        limit_timestamp=config.end_timestamp + pd.to_timedelta(1, unit="day"),
+    return (
+        paths,
+        polygon_aggs_schema,
+        generate_tables_from_csv_files(
+            paths=paths,
+            schema=polygon_aggs_schema,
+            start_timestamp=config.start_timestamp,
+            limit_timestamp=config.end_timestamp + pd.to_timedelta(1, unit="day"),
+        ),
     )
 
 
@@ -152,11 +192,18 @@ def concat_all_aggs_from_csv(
             print(f"Found existing {by_ticker_aggs_arrow_dir=}")
             return by_ticker_aggs_arrow_dir
 
+    partitioning = None
+    if schema.field(PARTITION_COLUMN_NAME) is not None:
+        partitioning = pa_ds.partitioning(
+            pa.schema([(PARTITION_COLUMN_NAME, pa.string())]), flavor="hive"
+        )
+
     # scanner = pa_ds.Scanner.from_batches(source=generate_batches_from_tables(tables), schema=schema)
     pa_ds.write_dataset(
         generate_batches_from_tables(tables),
         schema=schema,
         base_dir=by_ticker_aggs_arrow_dir,
+        partitioning=partitioning,
         format="parquet",
         existing_data_behavior="overwrite_or_ignore",
     )

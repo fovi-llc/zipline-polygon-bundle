@@ -67,7 +67,7 @@ rclone copy --check-first --checksum --progress s3polygon:flatfiles/us_stocks_si
     $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/trades_v1/2020;
 
 
-export ZIPLINE_ROOT=/Volumes/Oahu/Workspaces/zipline
+export ZIPLINE_ROOT=/Volumes/Oahu/Workspace/zipline
 
 rclone copy -P s3polygon:flatfiles/us_options_opra/day_aggs_v1/2023 \
     $POLYGON_DATA_DIR/flatfiles/us_options_opra/day_aggs_v1/2023
