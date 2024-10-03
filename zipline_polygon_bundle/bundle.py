@@ -313,6 +313,7 @@ def process_minute_aggregates(
     dates_with_data: set,
 ):
     # We want to do this by Hive partition at a time because each ticker will be complete.
+    # TODO: parallelize this.
     for frament in fragments:
         table = frament.to_table()
         print(f" {table.num_rows=}")
