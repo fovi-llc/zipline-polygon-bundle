@@ -1,6 +1,6 @@
 [project]
 name = 'zipline_polygon_bundle'
-version = '0.1.4'
+version = '0.1.5'
 description = 'A zipline-reloaded data provider bundle for Polygon.io'
 authors = [
     { name = 'Jim White', email = 'jim@fovi.com' },

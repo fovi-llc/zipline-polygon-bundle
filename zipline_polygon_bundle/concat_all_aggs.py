@@ -72,7 +72,7 @@ def generate_tables_from_csv_files(
 
 def generate_csv_agg_tables(
     config: PolygonConfig,
-) -> Tuple[pa.Schema, Iterator[pa.Table]]:
+) -> Tuple[list[str], pa.Schema, Iterator[pa.Table]]:
     """zipline does bundle ingestion one ticker at a time."""
     # We sort by path because they have the year and month in the dir names and the date in the filename.
     paths = sorted(

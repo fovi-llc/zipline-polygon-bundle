@@ -1,3 +1,4 @@
+from typing import Generator
 from zipline.data.bundles import register
 
 from .config import PolygonConfig
@@ -208,7 +209,7 @@ def polygon_equities_bundle_day(
     # pyarrow.Table.column returns a pyarrow.ChunkedArray.
     # https://arrow.apache.org/docs/python/generated/pyarrow.ChunkedArray.html#pyarrow.ChunkedArray.value_counts
     symbols = sorted(table.column("symbol").value_counts().field(0).to_pylist())
-    symbol_to_sid = {symbol: sid for sid, symbol in enumerate(symbols)}
+    symbol_to_sid = {symbol: sid + 1 for sid, symbol in enumerate(symbols)}
     dates_with_data = set()
 
     # Get data for all stocks and write to Zipline
@@ -245,82 +246,81 @@ def process_minute_aggregates(
     ticker_to_sid: dict[str, int],
     dates_with_data: set,
 ):
-    aggregates = aggregates.rename_columns(
-        {"ticker": "symbol", "window_start": "timestamp"}
-    )
-    for symbol in sorted(set(aggregates.column("symbol").to_pylist())):
-        if symbol not in ticker_to_sid:
-            ticker_to_sid[symbol] = len(ticker_to_sid) + 1
-        sid = ticker_to_sid[symbol]
-        df = aggregates.filter(
-            pyarrow.compute.field("symbol") == pyarrow.scalar(symbol)
-        ).to_pandas()
-        df = df.set_index("timestamp")
-        # The SQL schema zipline uses for symbols ignores case
-        if not symbol.isupper():
-            df["symbol"] = symbol_to_upper(symbol)
-        # # Remove duplicates
-        # df = df[~df.index.duplicated()]
-        # Take minutes as per calendar
-        df = df[df.index.isin(sessions)]
-        if len(df) < 2:
-            print(f" WARNING: Not enough data for {symbol=} {sid=}")
-            continue
-        # Check first and last date.
-        start_date = df.index[0].date()
-        dates_with_data.add(start_date)
-        end_date = df.index[-1].date()
-        dates_with_data.add(end_date)
-        # # Synch to the official exchange calendar
-        # df = df.reindex(sessions.tz_localize(None))
-        # # Missing volume and transactions are zero
-        # df["volume"] = df["volume"].fillna(0)
-        # df["transactions"] = df["transactions"].fillna(0)
-        # df.info()
-        # # Forward fill missing price data (better than backfill)
-        # df.ffill(inplace=True)
-        # df.info()
-        # # Back fill missing data (maybe necessary for the first day)
-        # df.bfill(inplace=True)
-        # df.info()
-        # # There should be no missing data
-        # if len(df) != len(sessions):
-        #     print(f" WARNING: Missing data for {symbol=} {len(df)=} != {len(sessions)=}")
-        # if df.isnull().sum().sum() > 0:
-        #     print(f" WARNING: nulls in data for {symbol=} {df.isnull().sum().sum()}")
+    for table in aggregates:
+        table = rename_polygon_to_zipline(table, "timestamp")
+        table = table.sort_by([("symbol", "ascending"), ("timestamp", "ascending")])
+        table = table.to_pandas()
+        for symbol, df in table.groupby("symbol", sort=False, as_index=False):
+            if symbol not in ticker_to_sid:
+                ticker_to_sid[symbol] = len(ticker_to_sid) + 1
+            sid = ticker_to_sid[symbol]
+            # The SQL schema zipline uses for symbols ignores case
+            sql_symbol = symbol_to_upper(symbol)
+            if symbol != sql_symbol:
+                df["symbol"] = sql_symbol
+            df = df.set_index("timestamp")
+            # # Remove duplicates
+            # df = df[~df.index.duplicated()]
+            # Take minutes as per calendar
+            df = df[df.index.isin(sessions)]
+            if len(df) < 2:
+                print(f" WARNING: Not enough data for {symbol=} {sid=}")
+                continue
+            # Check first and last date.
+            start_date = df.index[0].date()
+            dates_with_data.add(start_date)
+            end_date = df.index[-1].date()
+            dates_with_data.add(end_date)
+            # # Synch to the official exchange calendar
+            # df = df.reindex(sessions.tz_localize(None))
+            # # Missing volume and transactions are zero
+            # df["volume"] = df["volume"].fillna(0)
+            # df["transactions"] = df["transactions"].fillna(0)
+            # df.info()
+            # # Forward fill missing price data (better than backfill)
+            # df.ffill(inplace=True)
+            # df.info()
+            # # Back fill missing data (maybe necessary for the first day)
+            # df.bfill(inplace=True)
+            # df.info()
+            # # There should be no missing data
+            # if len(df) != len(sessions):
+            #     print(f" WARNING: Missing data for {symbol=} {len(df)=} != {len(sessions)=}")
+            # if df.isnull().sum().sum() > 0:
+            #     print(f" WARNING: nulls in data for {symbol=} {df.isnull().sum().sum()}")
 
-        # The auto_close date is the day after the last trade.
-        ac_date = end_date + pd.Timedelta(days=1)
+            # The auto_close date is the day after the last trade.
+            auto_close_date = end_date + pd.Timedelta(days=1)
 
-        # If metadata already has this sid, just extend the end_date and ac_date.
-        if sid in metadata.index:
-            if metadata.loc[sid, "start_date"] >= start_date:
-                print(
-                    f" ERROR: {symbol=} {sid=} {metadata.loc[sid, 'start_date']=} >= {start_date=}"
+            # If metadata already has this sid, just extend the end_date and ac_date.
+            if sid in metadata.index:
+                if metadata.loc[sid, "start_date"] >= start_date:
+                    print(
+                        f" ERROR: {symbol=} {sid=} {metadata.loc[sid, 'start_date']=} >= {start_date=}"
+                    )
+                if metadata.loc[sid, "end_date"] >= start_date:
+                    print(
+                        f" ERROR: {symbol=} {sid=} {metadata.loc[sid, 'end_date']=} >= {end_date=}"
+                    )
+                metadata.loc[sid, "end_date"] = end_date
+                metadata.loc[sid, "auto_close_date"] = auto_close_date
+            else:
+                # Add a row to the metadata DataFrame. Don't forget to add an exchange field.
+                metadata.loc[sid] = (
+                    start_date,
+                    end_date,
+                    auto_close_date,
+                    sql_symbol,
+                    calendar.name,
+                    symbol,
                 )
-            if metadata.loc[sid, "end_date"] >= start_date:
-                print(
-                    f" ERROR: {symbol=} {sid=} {metadata.loc[sid, 'end_date']=} >= {end_date=}"
-                )
-            metadata.loc[sid, "end_date"] = end_date
-            metadata.loc[sid, "auto_close_date"] = ac_date
-        else:
-            # Add a row to the metadata DataFrame. Don't forget to add an exchange field.
-            metadata.loc[sid] = (
-                start_date,
-                end_date,
-                ac_date,
-                symbol_to_upper(symbol),
-                calendar.name,
-                symbol,
-            )
-        # A df with 1 bar crashes zipline/data/bcolz_minute_bars.py", line 747
-        # pd.Timestamp(dts[0]), direction="previous"
-        if len(df) > 1:
-            print(f"\n{symbol=} {sid=} {len(df)=} {df.index[0]=} {df.index[-1]=}")
-            yield sid, df
-        else:
-            print(f" WARNING: Not enough data post reindex for {symbol=} {sid=}")
+            # A df with 1 bar crashes zipline/data/bcolz_minute_bars.py", line 747
+            # pd.Timestamp(dts[0]), direction="previous"
+            if len(df) > 1:
+                # print(f"\n{symbol=} {sid=} {len(df)=} {df.index[0]=} {df.index[-1]=}")
+                yield sid, df
+            else:
+                print(f" WARNING: Not enough data post reindex for {symbol=} {sid=}")
     return
 
 
