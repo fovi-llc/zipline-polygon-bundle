@@ -1,0 +1,315 @@
+extension.py
+
+register_polygon_equities_bundle(
+    "polygon",
+    start_session=parse_date("2016-01-05", calendar=calendar),
+    # end_session=parse_date("2024-09-11", calendar=calendar),
+    # start_session=parse_date("2023-01-03", calendar=calendar),
+    end_session=parse_date("2024-09-13", calendar=calendar),
+    calendar_name=calendar.name,
+    agg_time="day"
+)
+
+
+(.venv) jim@jims-air zipline_polygon_bundle % zipline ingest -b polygon
+[2024-09-28T00:56:30-0700-INFO][zipline.data.bundles.core]
+ Ingesting polygon
+Merging daily equity files:  [-----------------------#------------]  991
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   AMUB       0  14.6595  14.6595  14.6595  14.6595             0
+2019-08-13   AMUB       1  14.7448  14.7448  14.7448  14.7448             1
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high      low    close  transactions
+day                                                                        
+2019-08-13   AMUB       1  14.6595  14.7448  14.6595  14.7448             1
+Merging daily equity files:  [------------------------------#-----]  2539
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   BNKU    1000  44.2546  44.2546  44.3400  44.2546             4
+2019-08-13   BNKU       5  45.9859  45.9859  45.9859  45.9859             2
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high      low    close  transactions
+day                                                                        
+2019-08-13   BNKU    1005  44.2546  45.9859  44.2546  45.9859             6
+Merging daily equity files:  [#-----------------------------------]  2768
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume    open   close    high     low  transactions
+day                                                                    
+2019-08-13   BSCE      10  26.130  26.130  26.130  26.130             1
+2019-08-13   BSCE      57  26.095  26.095  26.095  26.095             1
+WARNING: Aggregated dupes df=
+           symbol  volume   open   high     low   close  transactions
+day                                                                  
+2019-08-13   BSCE      67  26.13  26.13  26.095  26.095             2
+Merging daily equity files:  [--------------------#---------------]  2960
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume   open  close   high    low  transactions
+day                                                                
+2019-08-13    BUY       0  17.92  17.92  17.92  17.92             0
+2019-08-13    BUY     500  18.26  18.21  18.26  18.21             3
+WARNING: Aggregated dupes df=
+           symbol  volume   open   high    low  close  transactions
+day                                                                
+2019-08-13    BUY     500  17.92  18.26  17.92  18.21             3
+Merging daily equity files:  [----#-------------------------------]  4806
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   DAUD       0  36.4729  36.4729  36.4729  36.4729             0
+2019-08-13   DAUD     620  35.5929  35.6398  35.6398  35.5929             3
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high      low    close  transactions
+day                                                                        
+2019-08-13   DAUD     620  36.4729  36.4729  35.5929  35.6398             3
+Merging daily equity files:  [#-----------------------------------]  6094
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   EMSG       0  24.1899  24.1899  24.1899  24.1899             0
+2019-08-13   EMSG       0  24.5109  24.5109  24.5109  24.5109             0
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high      low    close  transactions
+day                                                                        
+2019-08-13   EMSG       0  24.1899  24.5109  24.1899  24.5109             0
+Merging daily equity files:  [------------------------------#-----]  6709
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   FAUS       0  30.4600  30.4600  30.4600  30.4600             0
+2019-08-13   FAUS       0  31.0524  31.0524  31.0524  31.0524             0
+WARNING: Aggregated dupes df=
+           symbol  volume   open     high    low    close  transactions
+day                                                                    
+2019-08-13   FAUS       0  30.46  31.0524  30.46  31.0524             0
+Merging daily equity files:  [----------------#-------------------]  7110
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume      open     close      high       low  transactions
+day                                                                            
+2019-08-13   FLEU       0  127.5950  127.5950  127.5950  127.5950             0
+2019-08-13   FLEU     100  129.6009  129.6009  129.6009  129.6009             2
+WARNING: Aggregated dupes df=
+           symbol  volume     open      high      low     close  transactions
+day                                                                          
+2019-08-13   FLEU     100  127.595  129.6009  127.595  129.6009             2
+Merging daily equity files:  [-----#------------------------------]  8200
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume    open   close    high     low  transactions
+day                                                                    
+2019-08-13   GLBY       0  27.545  27.545  27.545  27.545             0
+2019-08-13   GLBY       0  27.495  27.495  27.495  27.495             0
+WARNING: Aggregated dupes df=
+           symbol  volume    open    high     low   close  transactions
+day                                                                    
+2019-08-13   GLBY       0  27.545  27.545  27.495  27.495             0
+Merging daily equity files:  [--------------------------#---------]  9231
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   HONR       0  25.3813  25.3813  25.3813  25.3813             0
+2019-08-13   HONR       0  25.6648  25.6648  25.6648  25.6648             0
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high      low    close  transactions
+day                                                                        
+2019-08-13   HONR       0  25.3813  25.6648  25.3813  25.6648             0
+Merging daily equity files:  [---------------------------#--------]  9960
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume    open   close     high      low  transactions
+day                                                                      
+2019-08-13   IMFC       0  26.365  26.365  26.3650  26.3650             0
+2019-08-13   IMFC    1170  26.325  26.325  26.3323  26.3101             5
+WARNING: Aggregated dupes df=
+           symbol  volume    open    high      low   close  transactions
+day                                                                     
+2019-08-13   IMFC    1170  26.365  26.365  26.3101  26.325             5
+Merging daily equity files:  [-----------#------------------------]  10020
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   INAU       0  26.6739  26.6739  26.6739  26.6739             0
+2019-08-13   INAU       0  27.0802  27.0802  27.0802  27.0802             0
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high      low    close  transactions
+day                                                                        
+2019-08-13   INAU       0  26.6739  27.0802  26.6739  27.0802             0
+Merging daily equity files:  [-----------------------------#------]  10520
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   IXSE       0  23.1400  23.1400  23.1400  23.1400             0
+2019-08-13   IXSE       0  23.1025  23.1025  23.1025  23.1025             0
+WARNING: Aggregated dupes df=
+           symbol  volume   open   high      low    close  transactions
+day                                                                    
+2019-08-13   IXSE       0  23.14  23.14  23.1025  23.1025             0
+Merging daily equity files:  [----#-------------------------------]  10709
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13    JJE       0  42.4173  42.4173  42.4173  42.4173             0
+2019-08-13    JJE       0  44.0237  44.0237  44.0237  44.0237             0
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high      low    close  transactions
+day                                                                        
+2019-08-13    JJE       0  42.4173  44.0237  42.4173  44.0237             0
+Merging daily equity files:  [-----#------------------------------]  14233
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   OLEM       0  16.4727  16.4727  16.4727  16.4727             0
+2019-08-13   OLEM       0  17.2146  17.2146  17.2146  17.2146             0
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high      low    close  transactions
+day                                                                        
+2019-08-13   OLEM       0  16.4727  17.2146  16.4727  17.2146             0
+Merging daily equity files:  [-#----------------------------------]  15295
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   PQLC       0  51.3207  51.3207  51.3207  51.3207             0
+2019-08-13   PQLC       0  51.9695  51.9695  51.9695  51.9695             0
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high      low    close  transactions
+day                                                                        
+2019-08-13   PQLC       0  51.3207  51.9695  51.3207  51.9695             0
+Merging daily equity files:  [---#--------------------------------]  15297
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   PQSV       0  47.0861  47.0861  47.0861  47.0861             0
+2019-08-13   PQSV       0  47.4562  47.4562  47.4562  47.4562             0
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high      low    close  transactions
+day                                                                        
+2019-08-13   PQSV       0  47.0861  47.4562  47.0861  47.4562             0
+Merging daily equity files:  [---------------------#--------------]  15726
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   PYPE       0  20.7407  20.7407  20.7407  20.7407             0
+2019-08-13   PYPE       0  20.8633  20.8633  20.8633  20.8633             0
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high      low    close  transactions
+day                                                                        
+2019-08-13   PYPE       0  20.7407  20.8633  20.7407  20.8633             0
+Merging daily equity files:  [---#--------------------------------]  16031
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume   open  close   high    low  transactions
+day                                                                
+2019-08-13   RBIN       0  24.47  24.47  24.47  24.47             0
+2019-08-13   RBIN     200  24.61  24.61  24.61  24.61             1
+WARNING: Aggregated dupes df=
+           symbol  volume   open   high    low  close  transactions
+day                                                                
+2019-08-13   RBIN     200  24.47  24.61  24.47  24.61             1
+Merging daily equity files:  [---------------------------#--------]  16308
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   RIDV       0  21.6639  21.6639  21.6639  21.6639             0
+2019-08-13   RIDV       0  21.8930  21.8930  21.8930  21.8930             0
+WARNING: Aggregated dupes df=
+           symbol  volume     open    high      low   close  transactions
+day                                                                      
+2019-08-13   RIDV       0  21.6639  21.893  21.6639  21.893             0
+Merging daily equity files:  [-----------------------------------#]  16988
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume    open   close    high     low  transactions
+day                                                                    
+2019-08-13   SCAP       0  34.275  34.275  34.275  34.275             0
+2019-08-13   SCAP     100  34.780  34.605  34.780  34.605             1
+WARNING: Aggregated dupes df=
+           symbol  volume    open   high     low   close  transactions
+day                                                                   
+2019-08-13   SCAP     100  34.275  34.78  34.275  34.605             1
+Merging daily equity files:  [-----------------#------------------]  17078
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   SCOM       1  27.5641  27.5641  27.5641  27.5641             1
+2019-08-13   SCOM     102  26.4600  26.4030  26.4600  26.4030             3
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high     low   close  transactions
+day                                                                      
+2019-08-13   SCOM     103  27.5641  27.5641  26.403  26.403             4
+Merging daily equity files:  [#-----------------------------------]  19653
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume    open   close    high     low  transactions
+day                                                                    
+2019-08-13   ULTR       0  50.045  50.045  50.045  50.045             0
+2019-08-13   ULTR       0  50.045  50.045  50.045  50.045             0
+WARNING: Aggregated dupes df=
+           symbol  volume    open    high     low   close  transactions
+day                                                                    
+2019-08-13   ULTR       0  50.045  50.045  50.045  50.045             0
+Merging daily equity files:  [#-----------------------------------]  19775
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   USDY       0  25.4867  25.4867  25.4867  25.4867             0
+2019-08-13   USDY       0  25.7851  25.7851  25.7851  25.7851             0
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high      low    close  transactions
+day                                                                        
+2019-08-13   USDY       0  25.4867  25.7851  25.4867  25.7851             0
+Merging daily equity files:  [------#-----------------------------]  19790
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume    open   close    high     low  transactions
+day                                                                    
+2019-08-13    USI       0  25.050  25.050  25.050  25.050             0
+2019-08-13    USI       0  25.035  25.035  25.035  25.035             0
+WARNING: Aggregated dupes df=
+           symbol  volume   open   high     low   close  transactions
+day                                                                  
+2019-08-13    USI       0  25.05  25.05  25.035  25.035             0
+Merging daily equity files:  [-----------#------------------------]  19985
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume    open   close    high     low  transactions
+day                                                                    
+2019-08-13   VEGA       0  31.785  31.785  31.785  31.785             0
+2019-08-13   VEGA       0  32.085  32.085  32.085  32.085             0
+WARNING: Aggregated dupes df=
+           symbol  volume    open    high     low   close  transactions
+day                                                                    
+2019-08-13   VEGA       0  31.785  32.085  31.785  32.085             0
+Merging daily equity files:  [---------------------#--------------]  20040
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13   VGFO       0  25.2737  25.2737  25.2737  25.2737             0
+2019-08-13   VGFO     300  25.6272  25.5788  25.6272  25.5788             1
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high      low    close  transactions
+day                                                                        
+2019-08-13   VGFO     300  25.2737  25.6272  25.2737  25.5788             1
+Merging daily equity files:  [------#-----------------------------]  21026
+WARNING: Dropping dupes df[duplicated_index]=
+           symbol  volume     open    close     high      low  transactions
+day                                                                        
+2019-08-13    XMX       0  29.2235  29.2235  29.2235  29.2235             0
+2019-08-13    XMX       0  29.5725  29.5725  29.5725  29.5725             0
+WARNING: Aggregated dupes df=
+           symbol  volume     open     high      low    close  transactions
+day                                                                        
+2019-08-13    XMX       0  29.2235  29.5725  29.2235  29.5725             0
+Merging daily equity files:  [####################################]       
+Loaded len(splits)=9919 from /Volumes/Oahu/Mirror/files.polygon.io/flatfiles/us_stocks_sip/api_cache/2016-01-05_2024-09-13/list_splits.parquet
+Loaded len(dividends)=1317348 from /Volumes/Oahu/Mirror/files.polygon.io/flatfiles/us_stocks_sip/api_cache/2016-01-05_2024-09-13/list_dividends.parquet
+[2024-09-28T01:14:26-0700-WARNING][zipline.data.adjustments]
+ Dividend ratio <= 0 for dividend sid=13133, ex_date=2023-12-13, amount=5.628
+[2024-09-28T01:14:26-0700-WARNING][zipline.data.adjustments]
+ Dividend ratio <= 0 for dividend sid=12982, ex_date=2022-12-22, amount=31.617
+[2024-09-28T01:14:26-0700-WARNING][zipline.data.adjustments]
+ Dividend ratio <= 0 for dividend sid=7978, ex_date=2020-02-03, amount=12.000
+[2024-09-28T01:14:26-0700-WARNING][zipline.data.adjustments]
+ Dividend ratio <= 0 for dividend sid=9, ex_date=2018-08-27, amount=6.000
+[2024-09-28T01:14:26-0700-WARNING][zipline.data.adjustments]
+ Dividend ratio <= 0 for dividend sid=11044, ex_date=2018-07-10, amount=103.750
+[2024-09-28T01:14:26-0700-WARNING][zipline.data.adjustments]
+ Dividend ratio <= 0 for dividend sid=12982, ex_date=2018-06-22, amount=9.188
+[2024-09-28T01:14:26-0700-WARNING][zipline.data.adjustments]
+ Dividend ratio <= 0 for dividend sid=7978, ex_date=2016-03-04, amount=4.000
+(.venv) jim@jims-air zipline_polygon_bundle % 
+

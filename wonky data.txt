@@ -1,0 +1,292 @@
+
+https://polygon.io/docs/stocks/get_v3_reference_splits
+
+https://api.polygon.io/v3/reference/splits?execution_date.gte=2018-10-10&execution_date.lt=2019-01-01&reverse_split=true&limit=100&apiKey=$POLYGON_API_KEY
+
+{"execution_date":"2018-11-19","id":"Ebe35af5961ac549f7b3c8bb669d4787707e6bf5233cd7b116d1eb04f3402aee3","split_from":10000,"split_to":1,"ticker":"PACDQ"}
+{"execution_date":"2018-11-08","id":"E97787eda3f898b135d081bf9b5486100b9207e269371ff23ffa9cd01b0c83bc8","split_from":2e+06,"split_to":1,"ticker":"NPWZ"}
+
+
+$ zipline_polygon_bundle % zipline ingest -b polygon
+
+ValueError: Ambiguous ownership for 7 symbols, multiple assets held the following symbols:
+ALPA (??):
+  intersections: (('2023-01-03 00:00:00', '2023-07-14 00:00:00'),)
+      start_date   end_date
+  sid                      
+  485 2023-01-03 2023-07-14
+  523 2023-01-03 2023-12-28
+BCPC (??):
+  intersections: (('2023-01-03 00:00:00', '2023-12-28 00:00:00'),)
+       start_date   end_date
+  sid                       
+  1254 2023-01-03 2023-12-28
+  1270 2023-01-03 2023-12-28
+CPK (??):
+  intersections: (('2023-01-03 00:00:00', '2023-11-14 00:00:00'),)
+       start_date   end_date
+  sid                       
+  2631 2023-01-03 2023-12-28
+  2922 2023-01-03 2023-11-14
+KW (??):
+  intersections: (('2023-09-27 00:00:00', '2023-09-28 00:00:00'),)
+       start_date   end_date
+  sid                       
+  6909 2023-01-03 2023-12-28
+  6925 2023-09-27 2023-09-28
+PLMR (??):
+  intersections: (('2023-03-15 00:00:00', '2023-04-03 00:00:00'),)
+       start_date   end_date
+  sid                       
+  9190 2023-01-03 2023-12-28
+  9191 2023-03-15 2023-04-03
+SRVR (??):
+  intersections: (('2023-11-22 00:00:00', '2023-12-13 00:00:00'),)
+        start_date   end_date
+  sid                        
+  11034 2023-01-03 2023-12-28
+  11035 2023-11-22 2023-12-13
+TPC (??):
+  intersections: (('2023-01-03 00:00:00', '2023-12-28 00:00:00'),)
+        start_date   end_date
+  sid                        
+  11629 2023-01-03 2023-12-28
+  11846 2023-01-03 2023-12-28
+
+
+
+
+
+Minute bars don't work if there is only one in the entire df.  
+
+/Users/jim/Projects/zipline_polygon_bundle/src/zipline_polygon_bundle.py:251: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  df.ffill(inplace=True)
+WARNING: Missing data for ACAQ
+Merging minute equity files:  [----#-------------------------------]  71<class 'pandas.core.frame.DataFrame'>
+DatetimeIndex: 1 entries, 2023-01-04 20:59:00+00:00 to 2023-01-04 20:59:00+00:00
+Data columns (total 7 columns):
+ #   Column        Non-Null Count  Dtype 
+---  ------        --------------  ----- 
+ 0   symbol        1 non-null      object
+ 1   volume        1 non-null      int64 
+ 2   open          1 non-null      object
+ 3   close         1 non-null      object
+ 4   high          1 non-null      object
+ 5   low           1 non-null      object
+ 6   transactions  1 non-null      int64 
+dtypes: int64(2), object(5)
+memory usage: 64.0+ bytes
+Merging minute equity files:  [----#-------------------------------]  72
+Traceback (most recent call last):
+  File "/Users/jim/Projects/zipline_polygon_bundle/.venv/bin/zipline", line 8, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/Users/jim/Projects/zipline_polygon_bundle/.venv/lib/python3.12/site-packages/click/core.py", line 1157, in __call__
+    return self.main(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jim/Projects/zipline_polygon_bundle/.venv/lib/python3.12/site-packages/click/core.py", line 1078, in main
+    rv = self.invoke(ctx)
+         ^^^^^^^^^^^^^^^^
+  File "/Users/jim/Projects/zipline_polygon_bundle/.venv/lib/python3.12/site-packages/click/core.py", line 1688, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jim/Projects/zipline_polygon_bundle/.venv/lib/python3.12/site-packages/click/core.py", line 1434, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jim/Projects/zipline_polygon_bundle/.venv/lib/python3.12/site-packages/click/core.py", line 783, in invoke
+    return __callback(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jim/Projects/zipline_polygon_bundle/.venv/lib/python3.12/site-packages/zipline/__main__.py", line 397, in ingest
+    bundles_module.ingest(
+  File "/Users/jim/Projects/zipline_polygon_bundle/.venv/lib/python3.12/site-packages/zipline/data/bundles/core.py", line 445, in ingest
+    bundle.ingest(
+  File "/Users/jim/Projects/zipline_polygon_bundle/src/zipline_polygon_bundle.py", line 148, in polygon_equities_bundle
+    minute_bar_writer.write(
+  File "/Users/jim/Projects/zipline_polygon_bundle/.venv/lib/python3.12/site-packages/zipline/data/bcolz_minute_bars.py", line 658, in write
+    write_sid(*e, invalid_data_behavior=invalid_data_behavior)
+  File "/Users/jim/Projects/zipline_polygon_bundle/.venv/lib/python3.12/site-packages/zipline/data/bcolz_minute_bars.py", line 690, in write_sid
+    self._write_cols(sid, dts, cols, invalid_data_behavior)
+  File "/Users/jim/Projects/zipline_polygon_bundle/.venv/lib/python3.12/site-packages/zipline/data/bcolz_minute_bars.py", line 747, in _write_cols
+    pd.Timestamp(dts[0]), direction="previous"
+                 ~~~^^^
+IndexError: index 0 is out of bounds for axis 0 with size 0
+
+
+These stocks have less than 2 days in the range 2016-01-05 thru 2024-09-11.
+(.venv) jim@jims-air zipline_polygon_bundle % zipline ingest -b polygon
+[2024-09-13T13:20:35-0700-INFO][zipline.data.bundles.core]
+ Ingesting polygon
+Merging daily equity files:  [#-----------------------------------]  271 WARNING: Not enough data for ADEAV
+Merging daily equity files:  [----------------------#-------------]  325 WARNING: Not enough data for ADSw
+Merging daily equity files:  [-#----------------------------------]  426 WARNING: Not enough data for AFCGV
+Merging daily equity files:  [---------------------------#--------]  1307 WARNING: Not enough data for ARMKw
+Merging daily equity files:  [----------------------#-------------]  1911 WARNING: Not enough data for BATRV
+Merging daily equity files:  [----------------------------------#-]  2312 WARNING: Not enough data for BIPw
+Merging daily equity files:  [----------------------------------#-]  2841 WARNING: Not enough data for BSMY
+Merging daily equity files:  [--------------------#---------------]  2918 WARNING: Not enough data for BTUw
+Merging daily equity files:  [------------------------#-----------]  3366 WARNING: Not enough data for CDLRw
+Merging daily equity files:  [---------------#--------------------]  3629 WARNING: Not enough data for CHIAV
+Merging daily equity files:  [-----------------#------------------]  3635 WARNING: Not enough data for CHIKV
+Merging daily equity files:  [-------------#----------------------]  4099 WARNING: Not enough data for CNXCV
+Merging daily equity files:  [-#----------------------------------]  4867 WARNING: Not enough data for DBrw
+Merging daily equity files:  [-------------------------------#----]  6087 WARNING: Not enough data for EMSA
+Merging daily equity files:  [-----#------------------------------]  6325 WARNING: Not enough data for ESABw
+Merging daily equity files:  [--------------------------#---------]  6412 WARNING: Not enough data for ETCw
+Merging daily equity files:  [-----------------------------------#]  6948 WARNING: Not enough data for FGDY
+Merging daily equity files:  [-------------------------#----------]  7009 WARNING: Not enough data for FIEF
+Merging daily equity files:  [#-----------------------------------]  7615 WARNING: Not enough data for FTV.WD
+Merging daily equity files:  [-----------------------------------#]  7819 WARNING: Not enough data for GBDCV
+Merging daily equity files:  [----------------------#-------------]  9055 WARNING: Not enough data for HHHw
+Merging daily equity files:  [--------------------------------#---]  9928 WARNING: Not enough data for ILMNV
+Merging daily equity files:  [-#----------------------------------]  10138 WARNING: Not enough data for INXB
+Merging daily equity files:  [-#----------------------------------]  10139 WARNING: Not enough data for INXBV
+Merging daily equity files:  [----------------------------------#-]  11542 WARNING: Not enough data for LEXAV
+Merging daily equity files:  [---#--------------------------------]  11669 WARNING: Not enough data for LILRV
+Merging daily equity files:  [#-----------------------------------]  11724 WARNING: Not enough data for LLDM
+Merging daily equity files:  [--------------------------#---------]  11934 WARNING: Not enough data for LSXRV
+Merging daily equity files:  [-------------------------------#----]  12133 WARNING: Not enough data for MAXNV
+Merging daily equity files:  [---------------------------#--------]  12384 WARNING: Not enough data for METw
+Merging daily equity files:  [---------------#--------------------]  12851 WARNING: Not enough data for MRKw
+Merging daily equity files:  [----------#-------------------------]  12976 WARNING: Not enough data for MTBpC.CL
+Merging daily equity files:  [---------------------#--------------]  13148 WARNING: Not enough data for NABLw
+Merging daily equity files:  [-----------------------------------#]  13369 WARNING: Not enough data for NFC.Uw
+Merging daily equity files:  [---------------#--------------------]  13761 WARNING: Not enough data for NTCOw
+Merging daily equity files:  [-----------#------------------------]  14702 WARNING: Not enough data for PCEM
+Merging daily equity files:  [-----#------------------------------]  15015 WARNING: Not enough data for PIOI
+Merging daily equity files:  [-----------------#------------------]  15570 WARNING: Not enough data for PTEST.X
+Merging daily equity files:  [----------------#-------------------]  15572 WARNING: Not enough data for PTEST.Z
+Merging daily equity files:  [-----------------------------------#]  16066 WARNING: Not enough data for RCF.U
+Merging daily equity files:  [-------------------#----------------]  16120 WARNING: Not enough data for RDVTV
+Merging daily equity files:  [-----------------#------------------]  16415 WARNING: Not enough data for RMNIU
+Merging daily equity files:  [--------------------------------#---]  16597 WARNING: Not enough data for RSFrw
+Merging daily equity files:  [-----------------------#------------]  16831 WARNING: Not enough data for SAIH
+Merging daily equity files:  [#-----------------------------------]  17334 WARNING: Not enough data for SHELw
+Merging daily equity files:  [--------#---------------------------]  17882 WARNING: Not enough data for SPErw
+Merging daily equity files:  [------------------#-----------------]  18337 WARNING: Not enough data for SUNSV
+Merging daily equity files:  [-----------------------------------#]  18404 WARNING: Not enough data for SWAY
+Merging daily equity files:  [-----------------------------------#]  18423 WARNING: Not enough data for SWIw
+Merging daily equity files:  [---------------------------------#--]  18776 WARNING: Not enough data for TFCF
+Merging daily equity files:  [---------------------------------#--]  18777 WARNING: Not enough data for TFCFA
+Merging daily equity files:  [-------#----------------------------]  19214 WARNING: Not enough data for TRLA
+Merging daily equity files:  [-----#------------------------------]  19494 WARNING: Not enough data for TZF
+Merging daily equity files:  [---------------------------#--------]  20627 WARNING: Not enough data for WHZ
+Merging daily equity files:  [-----------------------------#------]  20723 WARNING: Not enough data for WORw
+Merging daily equity files:  [--------------------------#---------]  20735 WARNING: Not enough data for WPCw
+Merging daily equity files:  [---------------------------------#--]  21001 WARNING: Not enough data for XLYO
+Merging daily equity files:  [---------------------------#--------]  21232 WARNING: Not enough data for YYJ.TEST
+Merging daily equity files:  [-------#----------------------------]  21400 WARNING: Not enough data for ZZK
+
+
+
+
+
+Stock Splits does work for delisted tickers
+https://api.polygon.io/v3/reference/splits?ticker=ATNY&limit=10&apiKey=$POLYGON_API_KEY
+{
+    "results": [
+        {
+            "execution_date": "2010-12-29",
+            "id": "E7becf06a1d2e80146eb4fbcd4cc90a7af2e72cb9c5566a61ce555d8694d69e7d",
+            "split_from": 4,
+            "split_to": 1,
+            "ticker": "ATNY"
+        },
+        {
+            "execution_date": "2007-11-20",
+            "id": "Ea57c840d72ae0c66b4afe6e0a5a1196b6c838bb8cb1781a5099877aa701a0a0a",
+            "split_from": 1,
+            "split_to": 5,
+            "ticker": "ATNY"
+        },
+        {
+            "execution_date": "2005-10-11",
+            "id": "Ee2c630d607fb26607db1152f78a39fa5739a7acc31e2759eecc575ea832fdb4d",
+            "split_from": 1,
+            "split_to": 4,
+            "ticker": "ATNY"
+        }
+    ],
+    "status": "OK",
+    "request_id": "835fe6aab31a1be5146409bdf7c1b8bb"
+}
+
+The question though is what does it look like for a ticker that was delisted then relisted?
+I guess ticker details on the split dates could help distinguish?
+Actually that would only help Zipline if I assigned different SIDs to that ticker.
+
+
+Ticker used by two different companies on same exchange.
+{
+    "results": [
+        {
+            "ticker": "ATN",
+            "name": "ATLAS ENERGY RESOURCES LLC COM UTS REP CL B LTD LLC INTS",
+            "market": "stocks",
+            "locale": "us",
+            "primary_exchange": "XNYS",
+            "type": "CS",
+            "active": false,
+            "currency_name": "usd",
+            "cik": "0001368802",
+            "last_updated_utc": "2009-09-30T00:00:00Z",
+            "delisted_utc": "2009-09-30T00:00:00Z"
+        },
+        {
+            "ticker": "ATN",
+            "name": "ACTION PERFORMANCE COS INC",
+            "market": "stocks",
+            "locale": "us",
+            "primary_exchange": "XNYS",
+            "active": false,
+            "currency_name": "usd",
+            "cik": "0000947772",
+            "last_updated_utc": "2005-12-13T00:00:00Z",
+            "delisted_utc": "2005-12-13T00:00:00Z"
+        }
+    ],
+    "status": "OK",
+    "request_id": "fe57af191997e0b1ec925612cd1fe62e",
+    "count": 2
+}
+
+
+
+Apparently there is a convention that one side of a split needs to be 1.
+
+https://www.nasdaq.com/market-activity/stock-splits
+NDEKY	Nitto Denko Corporation ADR	5 : 2	10/01/2024
+
+list_splits has:
+3     2024-10-01         1.0       2.5  NDEKY
+4     2024-10-01         5.0       1.0  NDEKY
+
+But some folks don't follow that and even have not integer sides:
+
+{"execution_date":"2023-12-07","split_from":1,"split_to":0.95968,"ticker":"ACTVX"}
+Which actually looks like an annual dividend
+https://seekingalpha.com/symbol/ACTVX/splits
+
+
+How are these temp dirs used?
+/var/folders/d5/tb1xcvfn55q_c12yxvb407380000gn
+
+[2024-09-16T02:10:27-0700-INFO][root]
+ copying /var/folders/d5/tb1xcvfn55q_c12yxvb407380000gn/T/tmpre02w2ap/polygon/2024-09-16T09;04;39.387247/daily_equities.bcolz/high/meta/storage -> /Users/jim/.zipline/data/polygon/2024-09-16T09;04;39.387247/daily_equities.bcolz/high/meta
+ 
+
+
+TODO: Don't include splits that don't have prices (yet):
+
+[2024-09-16T02:10:26-0700-WARNING][zipline.data.adjustments]
+ Couldn't compute ratio for dividend sid=8375, ex_date=2016-01-13, amount=0.010
+[2024-09-16T02:10:26-0700-WARNING][zipline.data.adjustments]
+ Couldn't compute ratio for dividend sid=3153, ex_date=2016-01-13, amount=0.100
+[2024-09-16T02:10:26-0700-WARNING][zipline.data.adjustments]
+ Couldn't compute ratio for dividend sid=6414, ex_date=2016-01-07, amount=0.140
+[2024-09-16T02:10:26-0700-WARNING][zipline.data.adjustments]
+ Dividend ratio <= 0 for dividend sid=13124, ex_date=2023-12-13, amount=5.628
+[2024-09-16T02:10:26-0700-WARNING][zipline.data.adjustments]
+ Dividend ratio <= 0 for dividend sid=7971, ex_date=2020-02-03, amount=12.000
+[2024-09-16T02:10:26-0700-WARNING][zipline.data.adjustments]
+ Dividend ratio <= 0 for dividend sid=7971, ex_date=2016-03-04, amount=4.000
+[2024-09-16T02:10:27-0700-INFO][root]
