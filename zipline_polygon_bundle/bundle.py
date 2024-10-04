@@ -1,4 +1,5 @@
 from zipline.data.bundles import register
+from zipline.data.resample import minute_frame_to_session_frame
 
 from .config import PolygonConfig
 from .concat_all_aggs import concat_all_aggs_from_csv, generate_csv_agg_tables
@@ -125,6 +126,7 @@ def process_day_aggregates(
         # Missing volume and transactions are zero
         df["volume"] = df["volume"].fillna(0)
         df["transactions"] = df["transactions"].fillna(0)
+        # TODO: These fills should have the same price for OHLC (open for backfill, close for forward fill)
         # Forward fill missing price data (better than backfill)
         df.ffill(inplace=True)
         # Back fill missing data (maybe necessary for before the first day bar)
@@ -240,10 +242,12 @@ def polygon_equities_bundle_day(
 def process_minute_batch(
     table,
     sessions,
+    minutes,
     metadata,
     calendar,
     symbol_to_sid: dict[str, int],
     dates_with_data: set,
+    agg_time: str,
 ):
     table_df = table.to_pandas()
     # table_df.sort_values(by=["symbol", "timestamp"], inplace=True)
@@ -256,61 +260,90 @@ def process_minute_batch(
         sql_symbol = symbol_to_upper(symbol)
         df["symbol"] = sql_symbol
         df = df.set_index("timestamp")
-        # # Remove duplicates
-        # df = df[~df.index.duplicated()]
-        # Take minutes as per calendar
-        # len_before = len(df)
-        df = df[df.index.isin(sessions)]
-        if len(df) < 2:
-            # print(f" WARNING: Not enough data for {symbol=} {sid=} {len(df)=} {len_before=}")
-            continue
-        # Check first and last date.
-        start_date = df.index[0].date()
-        dates_with_data.add(start_date)
-        end_date = df.index[-1].date()
-        dates_with_data.add(end_date)
+        if agg_time == "day":
+            df.drop(columns=["symbol", "transactions"], inplace=True)
+            # Check first and last date.
+            start_date = df.index[0].date()
+            start_timestamp = df.index[0]
+            dates_with_data.add(start_date)
+            end_date = df.index[-1].date()
+            end_timestamp = df.index[-1]
+            dates_with_data.add(end_date)
+            df = df[df.index.isin(minutes)]
+            len_before = len(df)
+            if len(df) < 1:
+                # TODO: Move sid assignment until after this check for no data.
+                print(f" WARNING: No data for {symbol=} {sid=} {len_before=} {start_timestamp=} {end_timestamp=}")
+                continue
+            df = minute_frame_to_session_frame(df, calendar)
+            df["symbol"] = sql_symbol
+            df = df[df.index.isin(sessions)]
 
-        # The auto_close date is the day after the last trade.
-        auto_close_date = end_date + pd.Timedelta(days=1)
+            # The auto_close date is the day after the last trade.
+            auto_close_date = end_date + pd.Timedelta(days=1)
 
-        # If metadata already has this sid, just extend the end_date and ac_date.
-        if sid in metadata.index:
-            if metadata.loc[sid, "start_date"] >= start_date:
-                print(
-                    f" ERROR: {symbol=} {sid=} {metadata.loc[sid, 'start_date']=} >= {start_date=}"
+            # If metadata already has this sid, just extend the end_date and ac_date.
+            if sid in metadata.index:
+                if metadata.loc[sid, "start_date"] >= start_date:
+                    print(
+                        f" ERROR: {symbol=} {sid=} {metadata.loc[sid, 'start_date']=} >= {start_date=}"
+                    )
+                if metadata.loc[sid, "end_date"] >= start_date:
+                    print(
+                        f" ERROR: {symbol=} {sid=} {metadata.loc[sid, 'end_date']=} >= {end_date=}"
+                    )
+                metadata.loc[sid, "end_date"] = end_date
+                metadata.loc[sid, "auto_close_date"] = auto_close_date
+            else:
+                # Add a row to the metadata DataFrame. Don't forget to add an exchange field.
+                metadata.loc[sid] = (
+                    start_date,
+                    end_date,
+                    auto_close_date,
+                    symbol_to_upper(symbol),
+                    calendar.name,
+                    symbol,
                 )
-            if metadata.loc[sid, "end_date"] >= start_date:
-                print(
-                    f" ERROR: {symbol=} {sid=} {metadata.loc[sid, 'end_date']=} >= {end_date=}"
-                )
-            metadata.loc[sid, "end_date"] = end_date
-            metadata.loc[sid, "auto_close_date"] = auto_close_date
+            df = df.reindex(sessions.tz_localize(None))
+            # df = df.reindex(sessions)
+            # Missing volume and transactions are zero
+            df["volume"] = df["volume"].fillna(0)
+            # df["transactions"] = df["transactions"].fillna(0)
+            # Forward fill missing price data (better than backfill)
+            # TODO: These fills should have the same price for OHLC (open for backfill, close for forward fill)
+            df.ffill(inplace=True)
+            # Back fill missing data (maybe necessary for before the first day bar)
+            df.bfill(inplace=True)
+            if len(df) > 0:
+                # print(f"\n{symbol=} {sid=} {len_before=} {start_timestamp=} {end_date=} {end_timestamp=} {len(df)=}")
+                yield sid, df
+            else:
+                print(f" WARNING: No day bars for {symbol=} {sid=} {len_before=} {start_date=} {start_timestamp=} {end_date=} {end_timestamp=}")
         else:
-            # Add a row to the metadata DataFrame. Don't forget to add an exchange field.
-            metadata.loc[sid] = (
-                start_date,
-                end_date,
-                auto_close_date,
-                symbol_to_upper(symbol),
-                calendar.name,
-                symbol,
-            )
-        # A df with 1 bar crashes zipline/data/bcolz_minute_bars.py", line 747
-        # pd.Timestamp(dts[0]), direction="previous"
-        if len(df) > 1:
-            # print(f"\n{symbol=} {sid=} {len(df)=} {df.index[0]=} {df.index[-1]=}")
-            yield sid, df
-        else:
-            print(f" WARNING: Not enough data post reindex for {symbol=} {sid=}")
+            len_before = len(df)
+            df = df[df.index.isin(minutes)]
+            if len(df) < 2:
+                print(f" WARNING: Not enough data for {symbol=} {sid=} {len(df)=} {len_before=}")
+                continue
+
+            # A df with 1 bar crashes zipline/data/bcolz_minute_bars.py", line 747
+            # pd.Timestamp(dts[0]), direction="previous"
+            if len(df) > 1:
+                yield sid, df
+            else:
+                print(f" WARNING: Not enough minute bars for {symbol=} {sid=} {len(df)=}")
+    return
 
 
 def process_minute_aggregates(
     fragments,
     sessions,
+    minutes,
     metadata,
     calendar,
     symbol_to_sid: dict[str, int],
     dates_with_data: set,
+    agg_time: str,
 ):
     # We want to do this by Hive partition at a time because each ticker will be complete.
     # TODO: parallelize this.
@@ -320,13 +353,17 @@ def process_minute_aggregates(
         # table = table.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
         table = rename_polygon_to_zipline(table, "timestamp")
         table = table.sort_by([("symbol", "ascending"), ("timestamp", "ascending")])
+        expr = pyarrow.compute.field("timestamp").isin(minutes)
+        table = table.filter(expr)
         yield from process_minute_batch(
             table=table,
             sessions=sessions,
+            minutes=minutes,
             metadata=metadata,
             calendar=calendar,
             symbol_to_sid=symbol_to_sid,
             dates_with_data=dates_with_data,
+            agg_time=agg_time,
         )
     return
 
@@ -379,16 +416,31 @@ def polygon_equities_bundle_minute(
     dates_with_data = set()
 
     # Get data for all stocks and write to Zipline
-    minute_bar_writer.write(
+    daily_bar_writer.write(
         process_minute_aggregates(
-            # batches=aggregates.to_batches(),
-            # batches=aggregates.to_batches(batch_size=1000000, use_threads=False),
             fragments=aggregates.get_fragments(),
-            sessions=calendar.sessions_minutes(start_session, end_session),
+            sessions=calendar.sessions_in_range(start_session, end_session),
+            minutes=calendar.sessions_minutes(start_session, end_session),
             metadata=metadata,
             calendar=calendar,
             symbol_to_sid=symbol_to_sid,
             dates_with_data=dates_with_data,
+            agg_time="day",
+        ),
+        show_progress=show_progress,
+    )
+
+    # Get data for all stocks and write to Zipline
+    minute_bar_writer.write(
+        process_minute_aggregates(
+            fragments=aggregates.get_fragments(),
+            sessions=calendar.sessions_in_range(start_session, end_session),
+            minutes=calendar.sessions_minutes(start_session, end_session),
+            metadata=metadata,
+            calendar=calendar,
+            symbol_to_sid=symbol_to_sid,
+            dates_with_data=dates_with_data,
+            agg_time="minute",
         ),
         show_progress=show_progress,
     )
