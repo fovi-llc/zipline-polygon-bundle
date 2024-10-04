@@ -33,8 +33,6 @@ rclone config create s3polygon s3 env_auth=false endpoint=$POLYGON_FILE_ENDPOINT
 The default asset dir is `us_stock_sip` but that can be overriden with the `POLYGON_ASSET_SUBDIR` 
 environment variable if/when Polygon.io adds other markets to flat files.
 
-N.B. Minute aggregates are coming soon.  Other assets as I need them or you add them, PR's welcome!
-
 ```bash
 export POLYGON_DATA_DIR=`pwd`/data/files.polygon.io
 for year in 2024 2023 2022 2021; do \
@@ -67,11 +65,15 @@ stdout:
 ```
 csvdir <no ingestions>
 polygon <no ingestions>
+polygon-minute <no ingestions>
 quandl <no ingestions>
 quantopian-quandl <no ingestions>
 ```
 
 ## Ingest the Polygon.io data.  The API key is needed for the split and dividend data.
+
+Note that ingest currently stores cached API data and shuffled agg data in the `POLYGON_DATA_DIR` directory (`flatfiles/us_stocks_sip/api_cache` and `flatfiles/us_stocks_sip/day_by_ticker_v1` respectively) so write access is needed at this stage.  After ingestion the data in `POLYGON_DATA_DIR` is not accessed.
+
 ```bash
 export POLYGON_API_KEY=<your API key here>
 zipline -e extension.py ingest -b polygon
@@ -83,6 +85,25 @@ up the list and could waste space (although old bundles may be useful for rerunn
 To remove all but the last ingest (say after your first successful ingest after a number of false starts) you could use:
 ```bash
 zipline -e extension.py clean -b polygon --keep-last 1
+```
+
+## Using minute aggregate flat files.
+Minute aggs work too but everything takes more space and a lot longer to do.  
+
+```bash
+export POLYGON_DATA_DIR=`pwd`/data/files.polygon.io
+for year in 2024 2023 2022 2021; do \
+    rclone copy -P s3polygon:flatfiles/us_stocks_sip/minute_aggs_v1/$year \
+    $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/minute_aggs_v1/$year; \
+done
+```
+
+If you set the `ZIPLINE_ROOT` environment variable (recommended and likely necessary because the default of `~/.zipline` is probably not what you'll want) and copy your `extension.py` config there then you don't need to put `-e extension.py` on the `zipline` command line.
+
+This ingestion for 10 years of minute bars took around 10 hours on my Mac using an external hard drive (not SSD).  A big chunk of that was copying from the default tmp dir to the Zipline root (6.3million files for 47GB actual, 63GB used).  I plan to change that `shutil.copy2` to use `shutil.move` and to use a `tmp` dir in Zipline root for temporary files instead of the default which should save an hour or two.  Also the ingestion process is single threaded and could be sped up with some concurrency.
+
+```bash
+zipline ingest -b polygon-minute
 ```
 
 # License is Affero General Public License v3 (AGPL v3)
