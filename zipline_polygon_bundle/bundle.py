@@ -11,6 +11,8 @@ import pyarrow.compute
 import pandas as pd
 import logging
 
+import concurrent.futures
+
 
 # TODO: Change warnings to be relative to number of days in the range.
 
@@ -239,8 +241,8 @@ def polygon_equities_bundle_day(
     adjustment_writer.write(splits=splits, dividends=dividends)
 
 
-def process_minute_batch(
-    table,
+def process_minute_fragment(
+    fragment,
     sessions,
     minutes,
     metadata,
@@ -249,8 +251,12 @@ def process_minute_batch(
     dates_with_data: set,
     agg_time: str,
 ):
+    table = fragment.to_table()
+    print(f" {table.num_rows=}")
+    table = rename_polygon_to_zipline(table, "timestamp")
+    table = table.sort_by([("symbol", "ascending"), ("timestamp", "ascending")])
+    table = table.filter(pyarrow.compute.field("timestamp").isin(minutes))
     table_df = table.to_pandas()
-    # table_df.sort_values(by=["symbol", "timestamp"], inplace=True)
     for symbol, df in table_df.groupby("symbol"):
         # print(f"\n{symbol=} {len(df)=} {df['timestamp'].min()} {df['timestamp'].max()}")
         if symbol not in symbol_to_sid:
@@ -273,7 +279,9 @@ def process_minute_batch(
             len_before = len(df)
             if len(df) < 1:
                 # TODO: Move sid assignment until after this check for no data.
-                print(f" WARNING: No data for {symbol=} {sid=} {len_before=} {start_timestamp=} {end_timestamp=}")
+                print(
+                    f" WARNING: No data for {symbol=} {sid=} {len_before=} {start_timestamp=} {end_timestamp=}"
+                )
                 continue
             df = minute_frame_to_session_frame(df, calendar)
             df["symbol"] = sql_symbol
@@ -318,12 +326,16 @@ def process_minute_batch(
                 # print(f"\n{symbol=} {sid=} {len_before=} {start_timestamp=} {end_date=} {end_timestamp=} {len(df)=}")
                 yield sid, df
             else:
-                print(f" WARNING: No day bars for {symbol=} {sid=} {len_before=} {start_date=} {start_timestamp=} {end_date=} {end_timestamp=}")
+                print(
+                    f" WARNING: No day bars for {symbol=} {sid=} {len_before=} {start_date=} {start_timestamp=} {end_date=} {end_timestamp=}"
+                )
         else:
             len_before = len(df)
             df = df[df.index.isin(minutes)]
             if len(df) < 2:
-                print(f" WARNING: Not enough data for {symbol=} {sid=} {len(df)=} {len_before=}")
+                print(
+                    f" WARNING: Not enough data for {symbol=} {sid=} {len(df)=} {len_before=}"
+                )
                 continue
 
             # A df with 1 bar crashes zipline/data/bcolz_minute_bars.py", line 747
@@ -331,7 +343,9 @@ def process_minute_batch(
             if len(df) > 1:
                 yield sid, df
             else:
-                print(f" WARNING: Not enough minute bars for {symbol=} {sid=} {len(df)=}")
+                print(
+                    f" WARNING: Not enough minute bars for {symbol=} {sid=} {len(df)=}"
+                )
     return
 
 
@@ -346,17 +360,9 @@ def process_minute_aggregates(
     agg_time: str,
 ):
     # We want to do this by Hive partition at a time because each ticker will be complete.
-    # TODO: parallelize this.
-    for frament in fragments:
-        table = frament.to_table()
-        print(f" {table.num_rows=}")
-        # table = table.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
-        table = rename_polygon_to_zipline(table, "timestamp")
-        table = table.sort_by([("symbol", "ascending"), ("timestamp", "ascending")])
-        expr = pyarrow.compute.field("timestamp").isin(minutes)
-        table = table.filter(expr)
-        yield from process_minute_batch(
-            table=table,
+    for fragment in fragments:
+        yield from process_minute_fragment(
+            fragment=fragment,
             sessions=sessions,
             minutes=minutes,
             metadata=metadata,
@@ -365,7 +371,26 @@ def process_minute_aggregates(
             dates_with_data=dates_with_data,
             agg_time=agg_time,
         )
-    return
+
+    # This doesn't seem to be hardly any faster than the above, something with the GIL?
+    # Also to use this we'd need to make sure the symbol_to_sid and dates_with_data are thread safe.
+    # with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
+    #     futures = [
+    #         executor.submit(
+    #             process_minute_fragment,
+    #             fragment,
+    #             sessions,
+    #             minutes,
+    #             metadata,
+    #             calendar,
+    #             symbol_to_sid,
+    #             dates_with_data,
+    #             agg_time,
+    #         )
+    #         for fragment in fragments
+    #     ]
+    #     for future in concurrent.futures.as_completed(futures):
+    #         yield from future.result()
 
 
 def polygon_equities_bundle_minute(
