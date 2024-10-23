@@ -4,8 +4,29 @@
 # Install rclone
 # brew install rclone
 
+export MIRROR_DIR=/Volumes/Oahu/Mirror
+export MIRROR_DIR=/media/nas20t1/Mirror
+
 export POLYGON_FILE_ENDPOINT=https://files.polygon.io/
-export POLYGON_DATA_DIR=/Volumes/Oahu/Mirror/files.polygon.io
+export POLYGON_DATA_DIR=$MIRROR_DIR/files.polygon.io
+
+
+# Using AWS CLI because rclone fails with big files (>1GB)
+
+aws configure set aws_access_key_id $POLYGON_S3_Access_ID
+aws configure set aws_secret_access_key $POLYGON_Secret_Access_Key
+
+aws configure set default.s3.max_bandwidth 50MB/s
+
+aws s3 ls s3://flatfiles/us_stocks_sip/ --endpoint-url https://files.polygon.io
+
+
+aws s3 cp s3://flatfiles/us_stocks_sip/quotes_v1/2023 $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/quotes_v1/2023 \
+    --recursive --endpoint-url https://files.polygon.io
+
+rclone copy -P --transfers 8 s3polygon:flatfiles/us_stocks_sip/trades_v1/2020/01 $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/trades_v1/2020/01
+
+
 
 # Set up your rclone configuration
 rclone config create s3polygon s3 env_auth=false access_key_id=$POLYGON_S3_Access_ID secret_access_key=$POLYGON_Secret_Access_Key endpoint=$POLYGON_FILE_ENDPOINT
@@ -59,6 +80,11 @@ for year in 2016 2017 2018 2019 2020 2021 2022 2023 2024; do \
     $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/trades_v1/$year; \
 done
 
+for year in 2024 2023; do \
+    rclone copy -cP s3polygon:flatfiles/us_stocks_sip/quotes_v1/$year \
+    $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/quotes_v1/$year; \
+done
+
 rclone copy --check-first --checksum --immutable -P \
     s3polygon:flatfiles/us_stocks_sip/trades_v1/$POLYGON_YEAR $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/trades_v1/$POLYGON_YEAR
 
@@ -105,3 +131,46 @@ for year in 2024; do \
     rclone copy -P s3polygon:flatfiles/us_options_opra/trades_v1/$year \
     $POLYGON_DATA_DIR/flatfiles/us_options_opra/trades_v1/$year; \
 done
+
+
+for year in 2020; do \
+    aws s3 sync s3://flatfiles/us_stocks_sip/day_aggs_v1/$year \
+        $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/day_aggs_v1/$year \
+        --checksum-mode ENABLED --endpoint-url https://files.polygon.io;
+    aws s3 sync s3://flatfiles/us_stocks_sip/minute_aggs_v1/$year \
+        $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/minute_aggs_v1/$year \
+        --checksum-mode ENABLED --endpoint-url https://files.polygon.io;
+    aws s3 sync s3://flatfiles/us_stocks_sip/trades_v1/$year \
+        $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/trades_v1/$year \
+        --checksum-mode ENABLED --endpoint-url https://files.polygon.io; 
+    aws s3 sync s3://flatfiles/us_stocks_sip/quotes_v1/$year \
+        $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/quotes_v1/$year \
+        --checksum-mode ENABLED --endpoint-url https://files.polygon.io; 
+done
+
+
+for year in 2020; do \
+    aws s3 sync s3://flatfiles/us_stocks_sip/day_aggs_v1/$year \
+        $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/day_aggs_v1/$year \
+        --checksum-mode ENABLED --endpoint-url https://files.polygon.io;
+done
+
+
+aws s3 sync s3://flatfiles/us_stocks_sip/day_aggs_v1 \
+    $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/day_aggs_v1 \
+    --checksum-mode ENABLED --endpoint-url https://files.polygon.io;
+aws s3 sync s3://flatfiles/us_stocks_sip/minute_aggs_v1 \
+    $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/minute_aggs_v1 \
+    --checksum-mode ENABLED --endpoint-url https://files.polygon.io;
+aws s3 sync s3://flatfiles/us_stocks_sip/trades_v1 \
+    $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/trades_v1 \
+    --checksum-mode ENABLED --endpoint-url https://files.polygon.io;
+aws s3 sync s3://flatfiles/us_stocks_sip/quotes_v1 \
+    $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/quotes_v1 \
+    --checksum-mode ENABLED --endpoint-url https://files.polygon.io;
+
+
+
+aws s3 sync s3://flatfiles/us_stocks_sip/day_aggs_v1 \
+    $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/day_aggs_v1 \
+    --checksum-mode ENABLED  --endpoint-url https://files.polygon.io;
