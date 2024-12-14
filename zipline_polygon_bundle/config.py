@@ -35,8 +35,8 @@ class PolygonConfig:
         self.cik_cusip_mapping_csv_path = environ.get(
             "CIK_CUSIP_MAPS_CSV", os.path.join(self.data_dir, "cik-cusip-maps.csv")
         )
-        self.asset_subdir = environ.get("POLYGON_ASSET_SUBDIR", "us_stocks_sip")
         self.market = environ.get("POLYGON_MARKET", "stocks")
+        self.asset_subdir = environ.get("POLYGON_ASSET_SUBDIR", "us_stocks_sip")
         self.tickers_dir = environ.get(
             "POLYGON_TICKERS_DIR",
             os.path.join(os.path.join(self.data_dir, "tickers"), self.asset_subdir),
@@ -56,6 +56,8 @@ class PolygonConfig:
         self.asset_files_dir = os.path.join(self.flat_files_dir, self.asset_subdir)
         self.minute_aggs_dir = os.path.join(self.asset_files_dir, "minute_aggs_v1")
         self.day_aggs_dir = os.path.join(self.asset_files_dir, "day_aggs_v1")
+        self.trades_dir = os.path.join(self.asset_files_dir, "trades_v1")
+        self.quotes_dir = os.path.join(self.asset_files_dir, "quotes_v1")
         self.aggs_dir = (
             self.minute_aggs_dir if self.agg_time == "minute" else self.day_aggs_dir
         )
