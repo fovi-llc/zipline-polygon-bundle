@@ -8,7 +8,8 @@ from .bundle import (
 from .config import PolygonConfig
 from .concat_all_aggs import concat_all_aggs_from_csv, generate_csv_agg_tables
 from .adjustments import load_splits, load_dividends, load_conditions
-from .trades_and_quotes import trades_schema, trades_dataset, cast_trades
+from .trades import trades_schema, trades_dataset, cast_trades
+from .quotes import quotes_schema, quotes_dataset, cast_quotes
 
 
 __all__ = [
@@ -24,5 +25,8 @@ __all__ = [
     "load_conditions",
     "trades_schema",
     "trades_dataset",
-    "cast_trades"
+    "cast_trades",
+    "quotes_schema",
+    "quotes_dataset",
+    "cast_quotes",
 ]
