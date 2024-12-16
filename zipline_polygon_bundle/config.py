@@ -3,6 +3,7 @@ from zipline.utils.calendar_utils import get_calendar
 
 import os
 import pandas as pd
+from pyarrow.fs import LocalFileSystem
 
 
 class PolygonConfig:
@@ -31,6 +32,7 @@ class PolygonConfig:
         if environ.get("POLYGON_MAX_WORKERS", "").strip() != "":
             self.max_workers = int(environ.get("POLYGON_MAX_WORKERS"))
         self.api_key = environ.get("POLYGON_API_KEY")
+        self.filesystem = LocalFileSystem()
         self.data_dir = environ.get("POLYGON_DATA_DIR", "data/files.polygon.io")
         self.cik_cusip_mapping_csv_path = environ.get(
             "CIK_CUSIP_MAPS_CSV", os.path.join(self.data_dir, "cik-cusip-maps.csv")
