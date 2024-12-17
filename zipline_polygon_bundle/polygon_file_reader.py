@@ -99,6 +99,6 @@ def process_all_csv_to_parquet(
 if __name__ == "__main__":
     # os.environ["POLYGON_DATA_DIR"] = "/Volumes/Oahu/Mirror/files.polygon.io"
     config = PolygonConfig(
-        environ=os.environ, calendar_name="XNYS", start_session=None, end_session=None
+        environ=os.environ, calendar_name="XNYS", start_date=None, end_date=None
     )
     process_all_csv_to_parquet(config.aggs_dir)

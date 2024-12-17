@@ -138,10 +138,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--calendar_name", default="XNYS")
 
-    parser.add_argument("--start_session", default="2014-06-16")
-    parser.add_argument("--end_session", default="2024-09-06")
-    # parser.add_argument("--start_session", default="2020-10-07")
-    # parser.add_argument("--end_session", default="2020-10-15")
+    parser.add_argument("--start_date", default="2014-06-16")
+    parser.add_argument("--end_date", default="2024-09-06")
+    # parser.add_argument("--start_date", default="2020-10-07")
+    # parser.add_argument("--end_date", default="2020-10-15")
     # parser.add_argument("--aggs_pattern", default="2020/10/**/*.csv.gz")
     parser.add_argument("--aggs_pattern", default="**/*.csv.gz")
 
@@ -163,8 +163,8 @@ if __name__ == "__main__":
     config = PolygonConfig(
         environ=os.environ,
         calendar_name=args.calendar_name,
-        start_session=args.start_session,
-        end_session=args.end_session,
+        start_date=args.start_date,
+        end_date=args.end_date,
     )
 
     concat_all_aggs_from_csv(

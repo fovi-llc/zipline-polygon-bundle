@@ -11,21 +11,23 @@ class PolygonConfig:
         self,
         environ: dict,
         calendar_name: str,
-        start_session: Date,
-        end_session: Date,
+        start_date: Date,
+        end_date: Date,
         agg_time: str = "day",
     ):
         if agg_time not in ["minute", "day"]:
             raise ValueError(f"agg_time must be 'minute' or 'day', got '{agg_time}'")
         self.calendar_name = calendar_name
+        self.start_date = start_date
+        self.end_date = end_date
         self.start_timestamp = (
-            parse_date(start_session, calendar=self.calendar)
-            if start_session
+            parse_date(start_date, calendar=self.calendar)
+            if start_date
             else self.calendar.first_session
         )
         self.end_timestamp = (
-            parse_date(end_session, calendar=self.calendar)
-            if end_session
+            parse_date(end_date, calendar=self.calendar)
+            if end_date
             else self.calendar.last_session
         )
         self.max_workers = None

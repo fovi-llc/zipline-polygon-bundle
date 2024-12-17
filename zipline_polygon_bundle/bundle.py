@@ -11,7 +11,7 @@ import pyarrow.compute
 import pandas as pd
 import logging
 
-import concurrent.futures
+# import concurrent.futures
 
 
 # TODO: Change warnings to be relative to number of days in the range.
@@ -175,8 +175,8 @@ def polygon_equities_bundle_day(
     daily_bar_writer,
     adjustment_writer,
     calendar,
-    start_session,
-    end_session,
+    start_date,
+    end_date,
     cache,
     show_progress,
     output_dir,
@@ -184,8 +184,8 @@ def polygon_equities_bundle_day(
     config = PolygonConfig(
         environ=environ,
         calendar_name=calendar.name,
-        start_session=start_session,
-        end_session=end_session,
+        start_date=start_date,
+        end_date=end_date,
         agg_time="day",
     )
 
@@ -219,7 +219,7 @@ def polygon_equities_bundle_day(
     daily_bar_writer.write(
         process_day_aggregates(
             table=table,
-            sessions=calendar.sessions_in_range(start_session, end_session),
+            sessions=calendar.sessions_in_range(start_date, end_date),
             metadata=metadata,
             calendar=calendar,
             symbol_to_sid=symbol_to_sid,
@@ -400,8 +400,8 @@ def polygon_equities_bundle_minute(
     daily_bar_writer,
     adjustment_writer,
     calendar,
-    start_session,
-    end_session,
+    start_date,
+    end_date,
     cache,
     show_progress,
     output_dir,
@@ -409,8 +409,8 @@ def polygon_equities_bundle_minute(
     config = PolygonConfig(
         environ=environ,
         calendar_name=calendar.name,
-        start_session=start_session,
-        end_session=end_session,
+        start_date=start_date,
+        end_date=end_date,
         agg_time="minute",
     )
 
@@ -444,8 +444,8 @@ def polygon_equities_bundle_minute(
     daily_bar_writer.write(
         process_minute_aggregates(
             fragments=aggregates.get_fragments(),
-            sessions=calendar.sessions_in_range(start_session, end_session),
-            minutes=calendar.sessions_minutes(start_session, end_session),
+            sessions=calendar.sessions_in_range(start_date, end_date),
+            minutes=calendar.sessions_minutes(start_date, end_date),
             metadata=metadata,
             calendar=calendar,
             symbol_to_sid=symbol_to_sid,
@@ -459,8 +459,8 @@ def polygon_equities_bundle_minute(
     minute_bar_writer.write(
         process_minute_aggregates(
             fragments=aggregates.get_fragments(),
-            sessions=calendar.sessions_in_range(start_session, end_session),
-            minutes=calendar.sessions_minutes(start_session, end_session),
+            sessions=calendar.sessions_in_range(start_date, end_date),
+            minutes=calendar.sessions_minutes(start_date, end_date),
             metadata=metadata,
             calendar=calendar,
             symbol_to_sid=symbol_to_sid,
@@ -485,8 +485,8 @@ def polygon_equities_bundle_minute(
 
 def register_polygon_equities_bundle(
     bundlename,
-    start_session=None,
-    end_session=None,
+    start_date=None,
+    end_date=None,
     calendar_name="XNYS",
     agg_time="day",
     # ticker_list=None,
@@ -502,8 +502,8 @@ def register_polygon_equities_bundle(
             if agg_time == "minute"
             else polygon_equities_bundle_day
         ),
-        start_session=start_session,
-        end_session=end_session,
+        start_date=start_date,
+        end_date=end_date,
         calendar_name=calendar_name,
         # minutes_per_day=390,
         # create_writers=True,
@@ -517,12 +517,12 @@ def register_polygon_equities_bundle(
 #     config = PolygonConfig(
 #         environ=os.environ,
 #         calendar_name="XNYS",
-#         # start_session="2003-10-01",
-#         # start_session="2018-01-01",
-#         start_session="2023-01-01",
-#         # end_session="2023-01-12",
-#         end_session="2023-12-31",
-#         # end_session="2024-06-30",
+#         # start_date="2003-10-01",
+#         # start_date="2018-01-01",
+#         start_date="2023-01-01",
+#         # end_date="2023-01-12",
+#         end_date="2023-12-31",
+#         # end_date="2024-06-30",
 #     )
 #     splits = load_polygon_splits(config)
 #     splits.info()
