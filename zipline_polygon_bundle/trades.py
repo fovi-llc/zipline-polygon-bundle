@@ -33,7 +33,7 @@ def trades_schema(raw: bool = False) -> pa.Schema:
             [
                 pa.field("ticker", pa.string(), nullable=False),
                 pa.field("conditions", pa.string(), nullable=False),
-                pa.field("correction", pa.int8(), nullable=False),
+                pa.field("correction", pa.string(), nullable=False),
                 pa.field("exchange", pa.int8(), nullable=False),
                 pa.field("id", pa.string(), nullable=False),
                 pa.field("participant_timestamp", timestamp_type, nullable=False),
@@ -263,19 +263,25 @@ def generate_csv_trades_tables(
             pass
         trades = fragment.to_table(schema=trades_ds.schema)
         trades = trades.cast(trades_schema())
-        # min_timestamp = pa.compute.min(trades.column('sip_timestamp')).as_py()
-        # max_timestamp = pa.compute.max(trades.column('sip_timestamp')).as_py()
-        # start_session = session['pre']
-        # end_session = session['post']
-        # if min_timestamp < start_session:
-        #     print(f"ERROR: {min_timestamp=} < {start_session=}")
-        # if max_timestamp >= end_session:
-        #     print(f"ERROR: {max_timestamp=} >= {end_session=}")
+        min_timestamp = pa.compute.min(trades.column('sip_timestamp')).as_py()
+        max_timestamp = pa.compute.max(trades.column('sip_timestamp')).as_py()
+        start_session = session['pre']
+        end_session = session['post']
+        # print(f"{start_session=} {end_session=}")
+        # print(f"{min_timestamp=} {max_timestamp=}")
+        if min_timestamp < start_session:
+            print(f"ERROR: {min_timestamp=} < {start_session=}")
+        # The end_session is supposed to be a limit but there are many with trades at that second.
+        if max_timestamp >= (end_session + pd.Timedelta(seconds=1)):
+            # print(f"ERROR: {max_timestamp=} >= {end_session=}")
+            print(f"ERROR: {max_timestamp=} > {end_session+pd.Timedelta(seconds=1)=}")
         yield date, trades
 
 
 def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, trades_table: pa.Table):
     print(f"{date=}")
+    trades_table = trades_table.filter(pa_compute.greater(trades_table["size"], 0))
+    trades_table = trades_table.filter(pa_compute.equal(trades_table["correction"], "0"))
     trades_df = trades_table.to_pandas()
     trades_df["window_start"] = trades_df["sip_timestamp"].dt.floor(config.agg_timedelta)
     aggs_df = trades_df.groupby(["ticker", "window_start"]).agg(
@@ -294,7 +300,7 @@ def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, trades_tab
         ['ticker', 'volume', 'open', 'close', 'high', 'low', 'window_start', 'transactions', 'date', 'year', 'month']
     )
     aggs_table = aggs_table.sort_by([('window_start', 'ascending'), ('ticker', 'ascending')])
-    print(f"{aggs_table.schema=}")
+    # print(f"{aggs_table.schema=}")
     return aggs_table
 
 
