@@ -275,6 +275,7 @@ def generate_csv_trades_tables(
 
 
 def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, trades_table: pa.Table):
+    print(f"{date=}")
     trades_df = trades_table.to_pandas()
     trades_df["window_start"] = trades_df["sip_timestamp"].dt.floor(config.agg_timedelta)
     aggs_df = trades_df.groupby(["ticker", "window_start"]).agg(
@@ -293,6 +294,7 @@ def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, trades_tab
         ['ticker', 'volume', 'open', 'close', 'high', 'low', 'window_start', 'transactions', 'date', 'year', 'month']
     )
     aggs_table = aggs_table.sort_by([('window_start', 'ascending'), ('ticker', 'ascending')])
+    print(f"{aggs_table.schema=}")
     return aggs_table
 
 
@@ -316,9 +318,14 @@ def custom_aggs_schema(raw: bool = False) -> pa.Schema:
         )
 
 
+def custom_aggs_partitioning() -> pa.Schema:
+    return pa_ds.partitioning(
+        pa.schema([('year', pa.uint16()), ('month', pa.uint8()), ('date', pa.date32())]), flavor="hive"
+    )
+
+
 def generate_custom_agg_batches_from_tables(config: PolygonConfig) -> pa.RecordBatch:
     for date, trades_table in generate_csv_trades_tables(config):
-        print(f"{date=}")
         for batch in trades_to_custom_aggs(config, date, trades_table).to_batches():
             yield batch
 
@@ -330,16 +337,13 @@ def convert_all_to_custom_aggs(
         print("WARNING: overwrite not implemented/ignored.")
 
     print(f"{config.custom_aggs_dir=}")
-    
-    partitioning = pa_ds.partitioning(
-        pa.schema([('year', pa.uint16()), ('month', pa.uint8()), ('date', pa.date32())]), flavor="hive"
-    )
 
     pa_ds.write_dataset(
         generate_custom_agg_batches_from_tables(config),
         schema=custom_aggs_schema(),
+        filesystem=config.filesystem,
         base_dir=config.custom_aggs_dir,
-        partitioning=partitioning,
+        partitioning=custom_aggs_partitioning(),
         format="parquet",
         existing_data_behavior="overwrite_or_ignore",
     )
