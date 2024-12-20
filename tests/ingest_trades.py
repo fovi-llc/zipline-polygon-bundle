@@ -1,8 +1,7 @@
-from zipline_polygon_bundle import convert_all_to_aggregates
+from zipline_polygon_bundle import convert_all_to_custom_aggs
 from zipline_polygon_bundle.config import PolygonConfig
 
 import os
-import pandas as pd
 import argparse
 
 
@@ -27,24 +26,20 @@ if __name__ == "__main__":
     if args.data_dir:
         os.environ["POLYGON_DATA_DIR"] = args.data_dir
 
-    from_config = PolygonConfig(
+    if args.to_data_dir:
+        os.environ["CUSTOM_ASSET_FILES_DIR"] = args.to_data_dir
+
+    config = PolygonConfig(
         environ=os.environ,
         calendar_name=args.calendar_name,
         start_date=args.start_date,
         end_date=args.end_date,
-        # agg_time=args.agg_time,
+        agg_time=args.agg_duration,
     )
 
-    to_config = None
+    convert_all_to_custom_aggs(config, overwrite=args.overwrite)
 
-    if args.to_data_dir:
-        os.environ["POLYGON_DATA_DIR"] = args.to_data_dir
-        to_config = PolygonConfig(
-            environ=os.environ,
-            calendar_name=args.calendar_name,
-            start_date=args.start_date,
-            end_date=args.end_date,
-            # agg_time=args.agg_time,
-        )
-
-    convert_all_to_aggregates(from_config, to_config, aggregate_timedelta=pd.to_timedelta(args.agg_duration), overwrite=args.overwrite)
+    # print(f"{config.aggs_dir=}")
+    # print(f"{config.custom_aggs_dir=}")
+    # print(f"{os.environ['CUSTOM_DATA_DIR']=}")
+    

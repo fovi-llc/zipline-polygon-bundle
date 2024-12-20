@@ -1,15 +1,20 @@
 from .config import PolygonConfig
 
-import os
+from typing import Iterator, Tuple
+
+import pandas as pd
 
 import pyarrow as pa
 from pyarrow import dataset as pa_ds
 from pyarrow import compute as pa_compute
-from fsspec.implementations.arrow import ArrowFSWrapper
 from pyarrow import parquet as pa_parquet
-import pandas_market_calendars
 
-import pandas as pd
+from fsspec.implementations.arrow import ArrowFSWrapper
+
+import os
+
+import datetime
+import pandas_market_calendars
 
 
 def trades_schema(raw: bool = False) -> pa.Schema:
@@ -92,35 +97,32 @@ def date_to_path(date, ext=".csv.gz"):
     return date.strftime("%Y/%m/%Y-%m-%d") + ext
 
 
-def convert_to_aggregates(config: PolygonConfig,
-                          to_config: PolygonConfig,
-                          aggregate_timedelta: pd.Timedelta,
-                          overwrite: bool,
-                          timestamp: pd.Timestamp,
-                          start_session: pd.Timestamp,
-                          end_session: pd.Timestamp):
+def convert_to_custom_aggs_file(config: PolygonConfig,
+                                overwrite: bool,
+                                timestamp: pd.Timestamp,
+                                start_session: pd.Timestamp,
+                                end_session: pd.Timestamp):
     date = timestamp.to_pydatetime().date()
     aggs_date_path = date_to_path(date, ext=".parquet")
-    aggs_path = f"{to_config.asset_files_dir}/aggs_{aggregate_timedelta.seconds}sec/{aggs_date_path}"
-    aggs_by_ticker_path = f"{to_config.asset_files_dir}/aggs_{aggregate_timedelta.seconds}sec_by_ticker/{aggs_date_path}"
-    to_fsspec = ArrowFSWrapper(to_config.filesystem)
-    if to_fsspec.exists(aggs_path) or to_fsspec.exists(aggs_by_ticker_path):
+    aggs_path = f"{config.custom_aggs_dir}/{aggs_date_path}"
+    # aggs_by_ticker_path = f"{config.custom_aggs_by_ticker_dir}/{aggs_date_path}"
+    fsspec = ArrowFSWrapper(config.filesystem)
+    if fsspec.exists(aggs_path) or fsspec.exists(aggs_by_ticker_path):
         if overwrite:
-            if to_fsspec.exists(aggs_path):
-                to_config.filesystem.delete_file(aggs_path)
-            if to_fsspec.exists(aggs_by_ticker_path):
-                to_config.filesystem.delete_file(aggs_by_ticker_path)
+            if fsspec.exists(aggs_path):
+                config.filesystem.delete_file(aggs_path)
+            if fsspec.exists(aggs_by_ticker_path):
+                config.filesystem.delete_file(aggs_by_ticker_path)
         else:
-            if to_fsspec.exists(aggs_path):
+            if fsspec.exists(aggs_path):
                 print(f"SKIPPING: {date=} File exists {aggs_path=}")
-            if to_fsspec.exists(aggs_by_ticker_path):
+            if fsspec.exists(aggs_by_ticker_path):
                 print(f"SKIPPING: {date=} File exists {aggs_by_ticker_path=}")
             return
-    to_fsspec.mkdir(to_fsspec._parent(aggs_path))
-    to_fsspec.mkdir(to_fsspec._parent(aggs_by_ticker_path))
+    fsspec.mkdir(fsspec._parent(aggs_path))
+    fsspec.mkdir(fsspec._parent(aggs_by_ticker_path))
     trades_path = f"{config.trades_dir}/{date_to_path(date)}"
-    from_fsspec = ArrowFSWrapper(config.filesystem)
-    if not from_fsspec.exists(trades_path):
+    if not fsspec.exists(trades_path):
         print(f"ERROR: Trades file missing.  Skipping {date=}.  {trades_path=}")
         return
     print(f"{trades_path=}")
@@ -160,62 +162,187 @@ def convert_to_aggregates(config: PolygonConfig,
     aggs_table = aggs_table.sort_by([('window_start', 'ascending'), ('ticker', 'ascending')])
     print(f"{aggs_path=}")
     pa_parquet.write_table(table=aggs_table,
-                           where=aggs_path, filesystem=to_config.filesystem) 
+                           where=aggs_path, filesystem=to_config.filesystem)
 
 
-def convert_all_to_aggregates(config: PolygonConfig,
-                              to_config: PolygonConfig = None,
-                              aggregate_timedelta: pd.Timedelta = pd.Timedelta(minutes=1),
-                              overwrite: bool = False):
-    if to_config is None:
-        to_config = config
+# def convert_to_custom_aggs(config: PolygonConfig,
+#                             overwrite: bool,
+#                             timestamp: pd.Timestamp,
+#                             start_session: pd.Timestamp,
+#                             end_session: pd.Timestamp):
+#     date = timestamp.to_pydatetime().date()
+#     aggs_date_path = date_to_path(date, ext=".parquet")
+#     aggs_path = f"{config.custom_aggs_dir}/{aggs_date_path}"
+#     # aggs_by_ticker_path = f"{config.custom_aggs_by_ticker_dir}/{aggs_date_path}"
+#     fsspec = ArrowFSWrapper(config.filesystem)
+#     if fsspec.exists(aggs_path) or fsspec.exists(aggs_by_ticker_path):
+#         if overwrite:
+#             if fsspec.exists(aggs_path):
+#                 config.filesystem.delete_file(aggs_path)
+#             if fsspec.exists(aggs_by_ticker_path):
+#                 config.filesystem.delete_file(aggs_by_ticker_path)
+#         else:
+#             if fsspec.exists(aggs_path):
+#                 print(f"SKIPPING: {date=} File exists {aggs_path=}")
+#             if fsspec.exists(aggs_by_ticker_path):
+#                 print(f"SKIPPING: {date=} File exists {aggs_by_ticker_path=}")
+#             return
+#     fsspec.mkdir(fsspec._parent(aggs_path))
+#     fsspec.mkdir(fsspec._parent(aggs_by_ticker_path))
+#     trades_path = f"{config.trades_dir}/{date_to_path(date)}"
+#     if not fsspec.exists(trades_path):
+#         print(f"ERROR: Trades file missing.  Skipping {date=}.  {trades_path=}")
+#         return
+#     print(f"{trades_path=}")
+#     format = pa_ds.CsvFileFormat()
+#     trades_ds = pa_ds.FileSystemDataset.from_paths([trades_path], format=format, schema=trades_schema(raw=True), filesystem=config.filesystem)
+#     fragments = trades_ds.get_fragments()
+#     fragment = next(fragments)
+#     try:
+#         next(fragments)
+#         print("ERROR: More than one fragment for {path=}")
+#     except StopIteration:
+#         pass
+#     trades = fragment.to_table(schema=trades_ds.schema)
+#     trades = trades.cast(trades_schema())
+#     min_timestamp = pa.compute.min(trades.column('sip_timestamp')).as_py()
+#     max_timestamp = pa.compute.max(trades.column('sip_timestamp')).as_py()
+#     if min_timestamp < start_session:
+#         print(f"ERROR: {min_timestamp=} < {start_session=}")
+#     if max_timestamp >= end_session:
+#         print(f"ERROR: {max_timestamp=} >= {end_session=}")
+#     trades_df = trades.to_pandas()
+#     trades_df["window_start"] = trades_df["sip_timestamp"].dt.floor(aggregate_timedelta)
+#     aggs_df = trades_df.groupby(["ticker", "window_start"]).agg(
+#         open=('price', 'first'),
+#         high=('price', 'max'),
+#         low=('price', 'min'),
+#         close=('price', 'last'),
+#         volume=('size', 'sum'),
+#     )
+#     aggs_df['transactions'] = trades_df.groupby(["ticker", "window_start"]).size()
+#     aggs_df.reset_index(inplace=True)
+#     aggs_table = pa.Table.from_pandas(aggs_df).select(['ticker', 'volume', 'open', 'close', 'high', 'low', 'window_start', 'transactions'])
+#     aggs_table = aggs_table.sort_by([('ticker', 'ascending'), ('window_start', 'ascending')])
+#     print(f"{aggs_by_ticker_path=}")
+#     pa_parquet.write_table(table=aggs_table,
+#                            where=aggs_by_ticker_path, filesystem=to_config.filesystem) 
+#     aggs_table = aggs_table.sort_by([('window_start', 'ascending'), ('ticker', 'ascending')])
+#     print(f"{aggs_path=}")
+#     pa_parquet.write_table(table=aggs_table,
+#                            where=aggs_path, filesystem=to_config.filesystem) 
+#     pa_ds.write_dataset(
+#         generate_batches_from_tables(tables),
+#         schema=schema,
+#         base_dir=by_ticker_aggs_arrow_dir,
+#         partitioning=partitioning,
+#         format="parquet",
+#         existing_data_behavior="overwrite_or_ignore",
+#     )
+
+
+def generate_csv_trades_tables(
+    config: PolygonConfig,
+) -> Tuple[datetime.date, Iterator[pa.Table]]:
+    """Generator for trades tables from flatfile CSVs."""
     # Use pandas_market_calendars so we can get extended hours.
     # NYSE and NASDAQ have extended hours but XNYS does not.
     calendar = pandas_market_calendars.get_calendar(config.calendar_name)
     schedule = calendar.schedule(start_date=config.start_timestamp, end_date=config.end_timestamp, start="pre", end="post")
     for timestamp, session in schedule.iterrows():
-        convert_to_aggregates(config, to_config, aggregate_timedelta, overwrite, timestamp, start_session=session['pre'], end_session=session['post'])
+        date = timestamp.to_pydatetime().date()
+        trades_csv_path = f"{config.trades_dir}/{date_to_path(date)}"
+        format = pa_ds.CsvFileFormat()
+        trades_ds = pa_ds.FileSystemDataset.from_paths([trades_csv_path], format=format, schema=trades_schema(raw=True), filesystem=config.filesystem)
+        fragments = trades_ds.get_fragments()
+        fragment = next(fragments)
+        try:
+            next(fragments)
+            print("ERROR: More than one fragment for {path=}")
+        except StopIteration:
+            pass
+        trades = fragment.to_table(schema=trades_ds.schema)
+        trades = trades.cast(trades_schema())
+        # min_timestamp = pa.compute.min(trades.column('sip_timestamp')).as_py()
+        # max_timestamp = pa.compute.max(trades.column('sip_timestamp')).as_py()
+        # start_session = session['pre']
+        # end_session = session['post']
+        # if min_timestamp < start_session:
+        #     print(f"ERROR: {min_timestamp=} < {start_session=}")
+        # if max_timestamp >= end_session:
+        #     print(f"ERROR: {max_timestamp=} >= {end_session=}")
+        yield date, trades
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--calendar_name", default="NYSE")
-    parser.add_argument("--start_date", default="2014-06-16")
-    parser.add_argument("--end_date", default="2024-09-06")
-    # parser.add_argument("--start_date", default="2020-01-01")
-    # parser.add_argument("--end_date", default="2020-12-31")
-
-    parser.add_argument("--agg_duration", default="1min")
-
-    parser.add_argument("--overwrite", action="store_true")
-
-    # parser.add_argument("--data_dir", default="/Volumes/Oahu/Mirror/files.polygon.io")
-    parser.add_argument("--data_dir", default=None)
-    parser.add_argument("--to_data_dir", default=None)
-
-    args = parser.parse_args()
-
-    if args.data_dir:
-        os.environ["POLYGON_DATA_DIR"] = args.data_dir
-
-    from_config = PolygonConfig(
-        environ=os.environ,
-        calendar_name=args.calendar_name,
-        start_date=args.start_date,
-        end_date=args.end_date,
-        agg_time=args.agg_time,
+def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, trades_table: pa.Table):
+    trades_df = trades_table.to_pandas()
+    trades_df["window_start"] = trades_df["sip_timestamp"].dt.floor(config.agg_timedelta)
+    aggs_df = trades_df.groupby(["ticker", "window_start"]).agg(
+        open=('price', 'first'),
+        high=('price', 'max'),
+        low=('price', 'min'),
+        close=('price', 'last'),
+        volume=('size', 'sum'),
     )
+    aggs_df['transactions'] = trades_df.groupby(["ticker", "window_start"]).size()
+    aggs_df.reset_index(inplace=True)
+    aggs_df['date'] = date
+    aggs_df['year'] = date.year
+    aggs_df['month'] = date.month
+    aggs_table = pa.Table.from_pandas(aggs_df).select(
+        ['ticker', 'volume', 'open', 'close', 'high', 'low', 'window_start', 'transactions', 'date', 'year', 'month']
+    )
+    aggs_table = aggs_table.sort_by([('window_start', 'ascending'), ('ticker', 'ascending')])
+    return aggs_table
 
-    to_config = None
 
-    if args.to_data_dir:
-        os.environ["POLYGON_DATA_DIR"] = args.to_data_dir
-        to_config = PolygonConfig(
-            environ=os.environ,
-            calendar_name=args.calendar_name,
-            start_date=args.start_date,
-            end_date=args.end_date,
-            agg_time=args.agg_time,
+def custom_aggs_schema(raw: bool = False) -> pa.Schema:
+    timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz="UTC")
+    price_type = pa.float64()
+    return pa.schema(
+            [
+                pa.field("ticker", pa.string(), nullable=False),
+                pa.field("volume", pa.int64(), nullable=False),
+                pa.field("open", price_type, nullable=False),
+                pa.field("close", price_type, nullable=False),
+                pa.field("high", price_type, nullable=False),
+                pa.field("low", price_type, nullable=False),
+                pa.field("window_start", timestamp_type, nullable=False),
+                pa.field("transactions", pa.int64(), nullable=False),
+                pa.field("date", pa.date32(), nullable=False),
+                pa.field("year", pa.uint16(), nullable=False),
+                pa.field("month", pa.uint8(), nullable=False),
+            ]
         )
 
-    convert_all_to_aggregates(from_config, to_config, aggregate_timedelta=pd.to_timedelta(args.agg_duration, units='s'), overrwrite=args.overwrite)
+
+def generate_custom_agg_batches_from_tables(config: PolygonConfig) -> pa.RecordBatch:
+    for date, trades_table in generate_csv_trades_tables(config):
+        print(f"{date=}")
+        for batch in trades_to_custom_aggs(config, date, trades_table).to_batches():
+            yield batch
+
+
+def convert_all_to_custom_aggs(
+    config: PolygonConfig, overwrite: bool = False
+) -> str:
+    if overwrite:
+        print("WARNING: overwrite not implemented/ignored.")
+
+    print(f"{config.custom_aggs_dir=}")
+    
+    partitioning = pa_ds.partitioning(
+        pa.schema([('year', pa.uint16()), ('month', pa.uint8()), ('date', pa.date32())]), flavor="hive"
+    )
+
+    pa_ds.write_dataset(
+        generate_custom_agg_batches_from_tables(config),
+        schema=custom_aggs_schema(),
+        base_dir=config.custom_aggs_dir,
+        partitioning=partitioning,
+        format="parquet",
+        existing_data_behavior="overwrite_or_ignore",
+    )
+    print(f"Generated aggregates to {config.custom_aggs_dir=}")
+    return config.custom_aggs_dir
+

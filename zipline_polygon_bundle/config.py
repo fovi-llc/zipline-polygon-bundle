@@ -1,9 +1,10 @@
 from exchange_calendars.calendar_helpers import Date, parse_date, parse_timestamp
 from zipline.utils.calendar_utils import get_calendar
 
-import os
 import pandas as pd
 from pyarrow.fs import LocalFileSystem
+import os
+import re
 
 
 class PolygonConfig:
@@ -14,9 +15,8 @@ class PolygonConfig:
         start_date: Date,
         end_date: Date,
         agg_time: str = "day",
+        custom_aggs_format: str = "{config.agg_timedelta.seconds}sec_aggs"
     ):
-        if agg_time not in ["minute", "day"]:
-            raise ValueError(f"agg_time must be 'minute' or 'day', got '{agg_time}'")
         self.calendar_name = calendar_name
         self.start_date = start_date
         self.end_date = end_date
@@ -56,25 +56,37 @@ class PolygonConfig:
             "POLYGON_FLAT_FILES_DIR", os.path.join(self.data_dir, "flatfiles")
         )
         self.csv_paths_pattern = environ.get("POLYGON_FLAT_FILES_CSV_PATTERN", "**/*.csv.gz")
-        self.agg_time = agg_time
         self.asset_files_dir = os.path.join(self.flat_files_dir, self.asset_subdir)
         self.minute_aggs_dir = os.path.join(self.asset_files_dir, "minute_aggs_v1")
         self.day_aggs_dir = os.path.join(self.asset_files_dir, "day_aggs_v1")
         self.trades_dir = os.path.join(self.asset_files_dir, "trades_v1")
         self.quotes_dir = os.path.join(self.asset_files_dir, "quotes_v1")
-        self.aggs_dir = (
-            self.minute_aggs_dir if self.agg_time == "minute" else self.day_aggs_dir
-        )
+
         # TODO: The "by ticker" files are temporary/intermediate and should/could be in the zipline data dir.
         self.minute_by_ticker_dir = os.path.join(
             self.asset_files_dir, "minute_by_ticker_v1"
         )
         self.day_by_ticker_dir = os.path.join(self.asset_files_dir, "day_by_ticker_v1")
-        self.by_ticker_dir = (
-            self.minute_by_ticker_dir
-            if self.agg_time == "minute"
-            else self.day_by_ticker_dir
-        )
+
+        if bool(re.match(r"^\d", agg_time)):
+            self.agg_timedelta = pd.to_timedelta(agg_time)
+            self.custom_asset_files_dir = environ.get("CUSTOM_ASSET_FILES_DIR", self.asset_files_dir)
+            self.custom_aggs_dir = os.path.join(self.custom_asset_files_dir, custom_aggs_format.format(config=self))
+            self.custom_aggs_by_ticker_dir = os.path.join(self.custom_asset_files_dir, (custom_aggs_format + "_by_ticker").format(config=self))
+            self.aggs_dir = self.custom_aggs_dir 
+            self.by_ticker_dir = self.custom_aggs_by_ticker_dir
+        elif agg_time == "minute":
+            self.agg_timedelta = pd.to_timedelta("1minute")
+            self.aggs_dir = self.minute_aggs_dir 
+            self.by_ticker_dir = self.minute_by_ticker_dir
+        elif agg_time == "day":
+            self.agg_timedelta = pd.to_timedelta("1day")
+            self.aggs_dir = self.day_aggs_dir
+            self.by_ticker_dir = self.day_by_ticker_dir
+        else:
+            raise ValueError(f"agg_time must be 'minute', 'day', or a timedelta string; got '{agg_time=}'")
+        self.agg_time = agg_time
+
         self.arrow_format = environ.get("POLYGON_ARROW_FORMAT", "parquet" if self.agg_time == "day" else "hive")
         # self.by_ticker_hive_dir = os.path.join(
         #     self.by_ticker_dir,
