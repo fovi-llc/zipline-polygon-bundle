@@ -8,6 +8,7 @@ import pyarrow as pa
 from pyarrow import dataset as pa_ds
 from pyarrow import compute as pa_compute
 from pyarrow import parquet as pa_parquet
+from pyarrow import csv as pa_csv
 
 from fsspec.implementations.arrow import ArrowFSWrapper
 
@@ -242,6 +243,46 @@ def convert_to_custom_aggs_file(config: PolygonConfig,
 #     )
 
 
+# def generate_csv_trades_tables(
+#     config: PolygonConfig,
+# ) -> Tuple[datetime.date, Iterator[pa.Table]]:
+#     """Generator for trades tables from flatfile CSVs."""
+#     # Use pandas_market_calendars so we can get extended hours.
+#     # NYSE and NASDAQ have extended hours but XNYS does not.
+#     calendar = pandas_market_calendars.get_calendar(config.calendar_name)
+#     schedule = calendar.schedule(start_date=config.start_timestamp, end_date=config.end_timestamp, start="pre", end="post")
+#     for timestamp, session in schedule.iterrows():
+#         date = timestamp.to_pydatetime().date()
+#         trades_csv_path = f"{config.trades_dir}/{date_to_path(date)}"
+#         format = pa_ds.CsvFileFormat()
+#         trades_ds = pa_ds.FileSystemDataset.from_paths([trades_csv_path], format=format, schema=trades_schema(raw=True), filesystem=config.filesystem)
+#         fragments = trades_ds.get_fragments()
+#         fragment = next(fragments)
+#         try:
+#             next(fragments)
+#             print("ERROR: More than one fragment for {path=}")
+#         except StopIteration:
+#             pass
+#         trades = fragment.to_table(schema=trades_ds.schema)
+#         trades = trades.cast(trades_schema())
+#         min_timestamp = pa.compute.min(trades.column('sip_timestamp')).as_py()
+#         max_timestamp = pa.compute.max(trades.column('sip_timestamp')).as_py()
+#         start_session = session['pre']
+#         end_session = session['post']
+#         # print(f"{start_session=} {end_session=}")
+#         # print(f"{min_timestamp=} {max_timestamp=}")
+#         if min_timestamp < start_session:
+#             print(f"ERROR: {min_timestamp=} < {start_session=}")
+#         # The end_session is supposed to be a limit but there are many with trades at that second.
+#         if max_timestamp >= (end_session + pd.Timedelta(seconds=1)):
+#             # print(f"ERROR: {max_timestamp=} >= {end_session=}")
+#             print(f"ERROR: {max_timestamp=} > {end_session+pd.Timedelta(seconds=1)=}")
+#         yield date, trades
+#         del fragment
+#         del fragments
+#         del trades_ds
+
+
 def generate_csv_trades_tables(
     config: PolygonConfig,
 ) -> Tuple[datetime.date, Iterator[pa.Table]]:
@@ -253,16 +294,8 @@ def generate_csv_trades_tables(
     for timestamp, session in schedule.iterrows():
         date = timestamp.to_pydatetime().date()
         trades_csv_path = f"{config.trades_dir}/{date_to_path(date)}"
-        format = pa_ds.CsvFileFormat()
-        trades_ds = pa_ds.FileSystemDataset.from_paths([trades_csv_path], format=format, schema=trades_schema(raw=True), filesystem=config.filesystem)
-        fragments = trades_ds.get_fragments()
-        fragment = next(fragments)
-        try:
-            next(fragments)
-            print("ERROR: More than one fragment for {path=}")
-        except StopIteration:
-            pass
-        trades = fragment.to_table(schema=trades_ds.schema)
+        convert_options = pa_csv.ConvertOptions(column_types=trades_schema(raw=True))
+        trades = pa_csv.read_csv(trades_csv_path, convert_options=convert_options)
         trades = trades.cast(trades_schema())
         min_timestamp = pa.compute.min(trades.column('sip_timestamp')).as_py()
         max_timestamp = pa.compute.max(trades.column('sip_timestamp')).as_py()
@@ -277,9 +310,7 @@ def generate_csv_trades_tables(
             # print(f"ERROR: {max_timestamp=} >= {end_session=}")
             print(f"ERROR: {max_timestamp=} > {end_session+pd.Timedelta(seconds=1)=}")
         yield date, trades
-        del fragment
-        del fragments
-        del trades_ds
+        del trades
 
 
 def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, trades_table: pa.Table):
@@ -307,6 +338,7 @@ def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, trades_tab
         ['ticker', 'volume', 'open', 'close', 'high', 'low', 'window_start', 'transactions', 'date', 'year', 'month']
     )
     aggs_table = aggs_table.sort_by([('window_start', 'ascending'), ('ticker', 'ascending')])
+    del aggs_df
     # print(f"{aggs_table.schema=}")
     return aggs_table
 
@@ -349,6 +381,18 @@ def generate_custom_agg_tables(config: PolygonConfig) -> pa.Table:
         yield trades_to_custom_aggs(config, date, trades_table)
 
 
+def write_custom_aggs_to_dataset(config, date, trades_table):
+    pa_ds.write_dataset(
+        trades_to_custom_aggs(config, date, trades_table),
+        # schema=custom_aggs_schema(),
+        filesystem=config.filesystem,
+        base_dir=config.custom_aggs_dir,
+        partitioning=custom_aggs_partitioning(),
+        format="parquet",
+        existing_data_behavior="overwrite_or_ignore",
+    )
+
+
 def convert_all_to_custom_aggs(
     config: PolygonConfig, overwrite: bool = False
 ) -> str:
@@ -384,11 +428,20 @@ def convert_all_to_custom_aggs(
             partitioning=custom_aggs_partitioning(),
             format="parquet",
             existing_data_behavior="overwrite_or_ignore",
-            # max_open_files = MAX_FILES_OPEN,
-            # min_rows_per_group = MIN_ROWS_PER_GROUP,
+            max_open_files=MAX_FILES_OPEN,
+            min_rows_per_group=MIN_ROWS_PER_GROUP,
         )
         del aggs_table
         del trades_table
+
+    # with ProcessPoolExecutor(max_workers=max_workers) as executor:
+    #     executor.map(
+    #         write_custom_aggs_to_dataset,
+    #         paths,
+    #         [by_ticker_dir] * len(paths),
+    #         [extension] * len(paths),
+    #     )
+
 
     print(f"Generated aggregates to {config.custom_aggs_dir=}")
     return config.custom_aggs_dir
