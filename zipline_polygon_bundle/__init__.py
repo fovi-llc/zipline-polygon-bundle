@@ -8,7 +8,9 @@ from .bundle import (
 from .config import PolygonConfig
 from .concat_all_aggs import concat_all_aggs_from_csv, generate_csv_agg_tables
 from .adjustments import load_splits, load_dividends, load_conditions
-from .trades import trades_schema, trades_dataset, cast_trades, date_to_path, custom_aggs_partitioning, custom_aggs_schema, trades_to_custom_aggs, convert_all_to_custom_aggs
+from .trades import trades_schema, trades_dataset, cast_trades, date_to_path
+from .trades import custom_aggs_partitioning, custom_aggs_schema, trades_to_custom_aggs, convert_all_to_custom_aggs
+from .trades import generate_csv_trades_tables
 from .quotes import quotes_schema, quotes_dataset, cast_quotes
 
 
@@ -27,6 +29,7 @@ __all__ = [
     "trades_dataset",
     "cast_trades",
     "date_to_path",
+    "generate_csv_trades_tables",
     "custom_aggs_partitioning",
     "custom_aggs_schema",
     "trades_to_custom_aggs",
