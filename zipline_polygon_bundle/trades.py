@@ -12,6 +12,7 @@ from pyarrow import parquet as pa_parquet
 from fsspec.implementations.arrow import ArrowFSWrapper
 
 import os
+import resource
 
 import datetime
 import pandas_market_calendars
@@ -276,10 +277,16 @@ def generate_csv_trades_tables(
             # print(f"ERROR: {max_timestamp=} >= {end_session=}")
             print(f"ERROR: {max_timestamp=} > {end_session+pd.Timedelta(seconds=1)=}")
         yield date, trades
+        del fragment
+        del fragments
+        del trades_ds
 
 
 def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, trades_table: pa.Table):
-    print(f"{date=}")
+    print(f"{date=} {pa.total_allocated_bytes()=}")
+    mp = pa.default_memory_pool()
+    print(f"{mp.backend_name=} {mp=}")
+    print(f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss=}")
     trades_table = trades_table.filter(pa_compute.greater(trades_table["size"], 0))
     trades_table = trades_table.filter(pa_compute.equal(trades_table["correction"], "0"))
     trades_df = trades_table.to_pandas()
@@ -334,6 +341,12 @@ def generate_custom_agg_batches_from_tables(config: PolygonConfig) -> pa.RecordB
     for date, trades_table in generate_csv_trades_tables(config):
         for batch in trades_to_custom_aggs(config, date, trades_table).to_batches():
             yield batch
+        del trades_table
+
+
+def generate_custom_agg_tables(config: PolygonConfig) -> pa.Table:
+    for date, trades_table in generate_csv_trades_tables(config):
+        yield trades_to_custom_aggs(config, date, trades_table)
 
 
 def convert_all_to_custom_aggs(
@@ -342,17 +355,41 @@ def convert_all_to_custom_aggs(
     if overwrite:
         print("WARNING: overwrite not implemented/ignored.")
 
+    MAX_FILES_OPEN = 8
+    MIN_ROWS_PER_GROUP = 100_000
+
     print(f"{config.custom_aggs_dir=}")
 
-    pa_ds.write_dataset(
-        generate_custom_agg_batches_from_tables(config),
-        schema=custom_aggs_schema(),
-        filesystem=config.filesystem,
-        base_dir=config.custom_aggs_dir,
-        partitioning=custom_aggs_partitioning(),
-        format="parquet",
-        existing_data_behavior="overwrite_or_ignore",
-    )
+    # pa.set_memory_pool()
+
+    # pa_ds.write_dataset(
+    #     generate_custom_agg_batches_from_tables(config),
+    #     schema=custom_aggs_schema(),
+    #     filesystem=config.filesystem,
+    #     base_dir=config.custom_aggs_dir,
+    #     partitioning=custom_aggs_partitioning(),
+    #     format="parquet",
+    #     existing_data_behavior="overwrite_or_ignore",
+    #     max_open_files = MAX_FILES_OPEN,
+    #     min_rows_per_group = MIN_ROWS_PER_GROUP,
+    # )
+
+    for date, trades_table in generate_csv_trades_tables(config):
+        aggs_table = trades_to_custom_aggs(config, date, trades_table)
+        pa_ds.write_dataset(
+            aggs_table,
+            # schema=custom_aggs_schema(),
+            filesystem=config.filesystem,
+            base_dir=config.custom_aggs_dir,
+            partitioning=custom_aggs_partitioning(),
+            format="parquet",
+            existing_data_behavior="overwrite_or_ignore",
+            # max_open_files = MAX_FILES_OPEN,
+            # min_rows_per_group = MIN_ROWS_PER_GROUP,
+        )
+        del aggs_table
+        del trades_table
+
     print(f"Generated aggregates to {config.custom_aggs_dir=}")
     return config.custom_aggs_dir
 
