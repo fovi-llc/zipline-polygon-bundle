@@ -287,16 +287,55 @@ def convert_to_custom_aggs_file(config: PolygonConfig,
 #         del trades_ds
 
 
+def custom_aggs_schema(raw: bool = False) -> pa.Schema:
+    timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz="UTC")
+    price_type = pa.float64()
+    return pa.schema(
+            [
+                pa.field("ticker", pa.string(), nullable=False),
+                pa.field("volume", pa.int64(), nullable=False),
+                pa.field("open", price_type, nullable=False),
+                pa.field("close", price_type, nullable=False),
+                pa.field("high", price_type, nullable=False),
+                pa.field("low", price_type, nullable=False),
+                pa.field("window_start", timestamp_type, nullable=False),
+                pa.field("transactions", pa.int64(), nullable=False),
+                pa.field("date", pa.date32(), nullable=False),
+                pa.field("year", pa.uint16(), nullable=False),
+                pa.field("month", pa.uint8(), nullable=False),
+            ]
+        )
+
+
+def custom_aggs_partitioning() -> pa.Schema:
+    return pa_ds.partitioning(
+        pa.schema([('year', pa.uint16()), ('month', pa.uint8()), ('date', pa.date32())]), flavor="hive"
+    )
+
+
+def get_custom_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
+    aggs_ds = pa_ds.dataset(config.custom_aggs_dir,
+                            format="parquet",
+                            schema=custom_aggs_schema(),
+                            partitioning=custom_aggs_partitioning())
+    return set([pa_ds.get_partition_keys(fragment.partition_expression).get("date") for fragment in aggs_ds.get_fragments()])
+
+
 def generate_csv_trades_tables(
-    config: PolygonConfig,
+    config: PolygonConfig, overwrite: bool = False
 ) -> Tuple[datetime.date, Iterator[pa.Table]]:
     """Generator for trades tables from flatfile CSVs."""
+    custom_aggs_dates = set()
+    if not overwrite:
+        custom_aggs_dates = get_custom_aggs_dates(config)
     # Use pandas_market_calendars so we can get extended hours.
     # NYSE and NASDAQ have extended hours but XNYS does not.
     calendar = pandas_market_calendars.get_calendar(config.calendar_name)
     schedule = calendar.schedule(start_date=config.start_timestamp, end_date=config.end_timestamp, start="pre", end="post")
     for timestamp, session in schedule.iterrows():
         date = timestamp.to_pydatetime().date()
+        if date in custom_aggs_dates:
+            continue
         trades_csv_path = f"{config.trades_dir}/{date_to_path(date)}"
         convert_options = pa_csv.ConvertOptions(column_types=trades_schema(raw=True))
         trades = pa_csv.read_csv(trades_csv_path, convert_options=convert_options)
@@ -348,32 +387,6 @@ def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, table: pa.
     table = table.append_column('month', pa.array(np.full(len(table), date.month), type=pa.uint8()))
     table = table.sort_by([('window_start', 'ascending'), ('ticker', 'ascending')])
     return table
-
-
-def custom_aggs_schema(raw: bool = False) -> pa.Schema:
-    timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz="UTC")
-    price_type = pa.float64()
-    return pa.schema(
-            [
-                pa.field("ticker", pa.string(), nullable=False),
-                pa.field("volume", pa.int64(), nullable=False),
-                pa.field("open", price_type, nullable=False),
-                pa.field("close", price_type, nullable=False),
-                pa.field("high", price_type, nullable=False),
-                pa.field("low", price_type, nullable=False),
-                pa.field("window_start", timestamp_type, nullable=False),
-                pa.field("transactions", pa.int64(), nullable=False),
-                pa.field("date", pa.date32(), nullable=False),
-                pa.field("year", pa.uint16(), nullable=False),
-                pa.field("month", pa.uint8(), nullable=False),
-            ]
-        )
-
-
-def custom_aggs_partitioning() -> pa.Schema:
-    return pa_ds.partitioning(
-        pa.schema([('year', pa.uint16()), ('month', pa.uint8()), ('date', pa.date32())]), flavor="hive"
-    )
 
 
 def generate_custom_agg_batches_from_tables(config: PolygonConfig) -> pa.RecordBatch:
