@@ -17,9 +17,10 @@ import resource
 
 import datetime
 import pandas_market_calendars
+import numpy as np
 
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import ProcessPoolExecutor
+# from concurrent.futures import ThreadPoolExecutor
+# from concurrent.futures import ProcessPoolExecutor
 
 
 def trades_schema(raw: bool = False) -> pa.Schema:
@@ -317,17 +318,20 @@ def generate_csv_trades_tables(
 
 
 def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, table: pa.Table):
-    print(f"{date=} {pa.total_allocated_bytes()=}")
-    mp = pa.default_memory_pool()
-    print(f"{mp.backend_name=} {mp=}")
-    print(f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss=}")
+    print(f"{date=} {pa.default_memory_pool()=}")
+    # print(f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss=}")
     table = table.filter(pa_compute.greater(table["size"], 0))
     table = table.filter(pa_compute.equal(table["correction"], "0"))
     table = table.append_column("window_start", 
                                 pa_compute.floor_temporal(table["sip_timestamp"],
                                                           multiple=config.agg_timedelta.seconds, unit="second"))
     table = table.group_by(["ticker", "window_start"], use_threads=False).aggregate([
-        ('price', 'first'), ('price', 'max'), ('price', 'min'), ('price', 'last'), ('size', 'sum'), ([], "count_all")
+        ('price', 'first'),
+        ('price', 'max'),
+        ('price', 'min'),
+        ('price', 'last'),
+        ('size', 'sum'),
+        ([], "count_all")
     ])
     table = table.rename_columns({
         'price_first': 'open',
@@ -336,30 +340,14 @@ def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, table: pa.
         'price_last': 'close',
         'size_sum': 'volume',
         'count_all': 'transactions'})
-    table.append_column('date', pa.array([date] * len(table), type=pa.date32()))
-    table.append_column('year', pa.array([date.year] * len(table), type=pa.uint16()))
-    table.append_column('month', pa.array([date.month] * len(table), type=pa.uint8()))
+    # table.append_column('date', pa.array([date] * len(table), type=pa.date32()))
+    # table.append_column('year', pa.array([date.year] * len(table), type=pa.uint16()))
+    # table.append_column('month', pa.array([date.month] * len(table), type=pa.uint8()))
+    table = table.append_column('date', pa.array(np.full(len(table), date)))
+    table = table.append_column('year', pa.array(np.full(len(table), date.year), type=pa.uint16()))
+    table = table.append_column('month', pa.array(np.full(len(table), date.month), type=pa.uint8()))
     table = table.sort_by([('window_start', 'ascending'), ('ticker', 'ascending')])
     return table
-    # trades_df = table.to_pandas()
-    # trades_df["window_start"] = trades_df["sip_timestamp"].dt.floor(config.agg_timedelta)
-    # aggs_df = trades_df.groupby(["ticker", "window_start"]).agg(
-    #     open=('price', 'first'),
-    #     high=('price', 'max'),
-    #     low=('price', 'min'),
-    #     close=('price', 'last'),
-    #     volume=('size', 'sum'),
-    # )
-    # aggs_df['transactions'] = trades_df.groupby(["ticker", "window_start"]).size()
-    # aggs_df.reset_index(inplace=True)
-    # aggs_df['date'] = date
-    # aggs_df['year'] = date.year
-    # aggs_df['month'] = date.month
-    # aggs_table = pa.Table.from_pandas(aggs_df).select(
-    #     ['ticker', 'volume', 'open', 'close', 'high', 'low', 'window_start', 'transactions', 'date', 'year', 'month']
-    # )
-    # del aggs_df
-    # print(f"{aggs_table.schema=}")
 
 
 def custom_aggs_schema(raw: bool = False) -> pa.Schema:
@@ -414,6 +402,10 @@ def configure_write_custom_aggs_to_dataset(config: PolygonConfig):
     return write_custom_aggs_to_dataset
 
 
+def file_visitor(written_file):
+    print(f"{written_file.path=}")
+
+
 def convert_all_to_custom_aggs(
     config: PolygonConfig, overwrite: bool = False
 ) -> str:
@@ -449,6 +441,7 @@ def convert_all_to_custom_aggs(
             partitioning=custom_aggs_partitioning(),
             format="parquet",
             existing_data_behavior="overwrite_or_ignore",
+            file_visitor=file_visitor,
             # max_open_files=MAX_FILES_OPEN,
             # min_rows_per_group=MIN_ROWS_PER_GROUP,
         )
