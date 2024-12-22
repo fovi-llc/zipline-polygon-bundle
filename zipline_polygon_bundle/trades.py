@@ -9,6 +9,7 @@ from pyarrow import dataset as pa_ds
 from pyarrow import compute as pa_compute
 from pyarrow import parquet as pa_parquet
 from pyarrow import csv as pa_csv
+from pyarrow import fs as pa_fs
 
 from fsspec.implementations.arrow import ArrowFSWrapper
 
@@ -314,6 +315,9 @@ def custom_aggs_partitioning() -> pa.Schema:
 
 
 def get_custom_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
+    file_info = config.filesystem.get_file_info(config.custom_aggs_dir)
+    if file_info.type == pa_fs.FileType.NotFound:
+        return set()
     aggs_ds = pa_ds.dataset(config.custom_aggs_dir,
                             format="parquet",
                             schema=custom_aggs_schema(),
@@ -356,11 +360,13 @@ def generate_csv_trades_tables(
         del trades
 
 
-def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, table: pa.Table):
-    print(f"{date=} {pa.default_memory_pool()=}")
+def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, table: pa.Table, include_trf: bool = False) -> pa.Table:
+    print(f"{datetime.datetime.now()=} {date=} {pa.default_memory_pool()=}")
     # print(f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss=}")
     table = table.filter(pa_compute.greater(table["size"], 0))
     table = table.filter(pa_compute.equal(table["correction"], "0"))
+    if not include_trf:
+        table = table.filter(pa_compute.not_equal(table["exchange"], 4))
     table = table.append_column("window_start", 
                                 pa_compute.floor_temporal(table["sip_timestamp"],
                                                           multiple=config.agg_timedelta.seconds, unit="second"))
