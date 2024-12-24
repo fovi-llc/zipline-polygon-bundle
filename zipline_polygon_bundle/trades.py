@@ -370,6 +370,7 @@ def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, table: pa.
     table = table.append_column("window_start", 
                                 pa_compute.floor_temporal(table["sip_timestamp"],
                                                           multiple=config.agg_timedelta.seconds, unit="second"))
+    # TODO: Calculate VWAP.
     table = table.group_by(["ticker", "window_start"], use_threads=False).aggregate([
         ('price', 'first'),
         ('price', 'max'),
