@@ -3,6 +3,7 @@ from .config import PolygonConfig
 import datetime
 import os
 import pandas as pd
+import csv
 import polygon
 import logging
 from concurrent.futures import ProcessPoolExecutor
@@ -383,40 +384,3 @@ def get_ticker_universe(config: PolygonConfig, fetch_missing: bool = False):
     merged_tickers = pd.read_parquet(parquet_path)
     merged_tickers.info()
     return merged_tickers
-
-
-# Initialize ticker files in __main__.  Use CLI args to specify start and end dates.
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Initialize ticker files.")
-    parser.add_argument(
-        "--start-date",
-        type=str,
-        help="Start date in ISO format (YYYY-MM-DD)",
-        default="2014-05-01",
-    )
-    parser.add_argument(
-        "--end-date",
-        type=str,
-        help="End date in ISO format (YYYY-MM-DD)",
-        default="2024-04-01",
-    )
-    args = parser.parse_args()
-
-    start_date = (
-        datetime.datetime.strptime(args.start_date, "%Y-%m-%d").date()
-        if args.start_date
-        else datetime.date.today()
-    )
-    end_date = (
-        datetime.datetime.strptime(args.end_date, "%Y-%m-%d").date()
-        if args.end_date
-        else datetime.date.today()
-    )
-
-    all_tickers = load_all_tickers(start_date, end_date, fetch_missing=True)
-    merged_tickers = merge_tickers(all_tickers)
-    merged_tickers.to_csv(f"data/tickers/us_tickers_{start_date}-{end_date}.csv")
-    ticker_names = ticker_names_from_merged_tickers(merged_tickers)
-    print(ticker_names)

@@ -42,4 +42,3 @@ if __name__ == "__main__":
     # print(f"{config.aggs_dir=}")
     # print(f"{config.custom_aggs_dir=}")
     # print(f"{os.environ['CUSTOM_DATA_DIR']=}")
-    
