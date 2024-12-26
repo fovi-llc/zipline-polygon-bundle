@@ -2,8 +2,6 @@ from .config import PolygonConfig
 
 from typing import Iterator, Tuple
 
-import pandas as pd
-
 import pyarrow as pa
 from pyarrow import dataset as pa_ds
 from pyarrow import compute as pa_compute
@@ -13,12 +11,10 @@ from pyarrow import fs as pa_fs
 
 from fsspec.implementations.arrow import ArrowFSWrapper
 
-import os
-import resource
-
 import datetime
 import pandas_market_calendars
 import numpy as np
+import pandas as pd
 
 # from concurrent.futures import ThreadPoolExecutor
 # from concurrent.futures import ProcessPoolExecutor
@@ -367,6 +363,7 @@ def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, table: pa.
     table = table.filter(pa_compute.equal(table["correction"], "0"))
     if not include_trf:
         table = table.filter(pa_compute.not_equal(table["exchange"], 4))
+    table = table.append_column("price_total", pa_compute.multiply(table["price"], table["size"]))
     table = table.append_column("window_start", 
                                 pa_compute.floor_temporal(table["sip_timestamp"],
                                                           multiple=config.agg_timedelta.seconds, unit="second"))
@@ -376,6 +373,7 @@ def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, table: pa.
         ('price', 'max'),
         ('price', 'min'),
         ('price', 'last'),
+        ('price_total', 'sum'),
         ('size', 'sum'),
         ([], "count_all")
     ])
@@ -385,7 +383,9 @@ def trades_to_custom_aggs(config: PolygonConfig, date: datetime.date, table: pa.
         'price_min': 'low',
         'price_last': 'close',
         'size_sum': 'volume',
+        'price_total_sum': 'total',
         'count_all': 'transactions'})
+    table = table.append_column("vwap", pa_compute.divide(table['total'], table['volume']))
     # table.append_column('date', pa.array([date] * len(table), type=pa.date32()))
     # table.append_column('year', pa.array([date.year] * len(table), type=pa.uint16()))
     # table.append_column('month', pa.array([date.month] * len(table), type=pa.uint8()))
