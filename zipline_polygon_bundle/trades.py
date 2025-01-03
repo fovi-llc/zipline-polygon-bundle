@@ -545,6 +545,7 @@ def compute_per_ticker_signals(df: pd.DataFrame, period: int = 14) -> pd.DataFra
                                   end=df.index[-1],
                                   freq=pd.Timedelta(seconds=60))
     df = df.reindex(session_index)
+    df.index.rename('window_start', inplace=True)
 
     # df["minute_of_day"] = (df.index.hour * 60) + df.index.minute
     # df["day_of_week"] = df.index.day_of_week
@@ -683,7 +684,6 @@ def compute_signals_for_all_custom_aggs(
 
     for aggs_table in iterate_all_aggs_tables(from_config, valid_tickers):
         metadata = aggs_table.schema.metadata
-        print(f"{metadata=}")
         date = datetime.date.fromisoformat(metadata[b'date'].decode('utf-8'))
         print(f"{date=}")
         df = aggs_table.to_pandas()
