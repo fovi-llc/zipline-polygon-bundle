@@ -151,5 +151,5 @@ def load_dividends(
     # Only return columns Zipline wants.
     # Polygon may add more columns in the future (as they did with `id`).
     return dividends[
-        ["sid", "ex_date", "declared_date", "record_date", "pay_date", "ratio"]
+        ["sid", "ex_date", "declared_date", "record_date", "pay_date", "amount"]
     ]
