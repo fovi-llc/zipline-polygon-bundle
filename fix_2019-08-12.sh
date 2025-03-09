@@ -8,9 +8,9 @@ incorrect_timestamp="1565668800000000000"
 correct_timestamp="1565582400000000000"
 
 # Save the bad old file
-SAVE_DIR=$POLYGON_DATA_DIR/flatfiles/us_stocks_sip/day_aggs_v1/saved
+SAVE_DIR=$POLYGON_DATA_DIR/flatfiles/saved
 mkdir -p $SAVE_DIR
-bad_file=$SAVE_DIR/2019-08-12.csv.gz
+bad_file=$SAVE_DIR/day_aggs_v1_2019-08-12.csv.gz
 
 mv $file_path $bad_file
 
