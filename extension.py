@@ -4,8 +4,8 @@ from zipline.utils.calendar_utils import get_calendar
 
 calendar = get_calendar("XNYS")
 
-# This start and end dates need to be days when the market was open per the calendar.
-# If you don't provide these dates, the bundle will use the first and last dates of the calendar.
+# By default the bundle will ingest all the data in the POLYGON_DATA_DIR/flatfiles aggregates.
+# If you want to limit the ingest to a subset of those days, you can set start_session and end_session.
 # Be sure to set POLYGON_API_KEY and POLYGON_DATA_DIR in your environment before running this.
 # See the README.md for info on using `rclone` to sync data from S3 to your local machine.
 register_polygon_equities_bundle(

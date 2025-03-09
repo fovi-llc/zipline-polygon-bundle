@@ -64,7 +64,7 @@ def generate_tables_from_csv_files(
             "window_start",
             table.column("window_start").cast(schema.field("window_start").type),
         )
-        if schema.field(PARTITION_COLUMN_NAME) is not None:
+        if PARTITION_COLUMN_NAME in schema.names:
             table = table.append_column(
                 PARTITION_COLUMN_NAME,
                 pa.array(
@@ -101,7 +101,7 @@ def generate_tables_from_csv_files(
 
 def generate_csv_agg_tables(
     config: PolygonConfig,
-) -> Tuple[pa.Schema, Iterator[pa.Table]]:
+) -> Tuple[list[str], pa.Schema, Iterator[pa.Table]]:
     """zipline does bundle ingestion one ticker at a time."""
     # We sort by path because they have the year and month in the dir names and the date in the filename.
     paths = sorted(
@@ -190,7 +190,7 @@ def concat_all_aggs_from_csv(
             return by_ticker_aggs_arrow_dir
 
     partitioning = None
-    if schema.field(PARTITION_COLUMN_NAME) is not None:
+    if PARTITION_COLUMN_NAME in schema.names:
         partitioning = pa_ds.partitioning(
             pa.schema([(PARTITION_COLUMN_NAME, pa.string())]), flavor="hive"
         )
