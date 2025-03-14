@@ -7,11 +7,10 @@ from .adjustments import load_splits, load_dividends
 
 import pyarrow
 import pyarrow.compute
+import pyarrow.dataset
 
 import pandas as pd
 import logging
-
-import concurrent.futures
 
 
 # TODO: Change warnings to be relative to number of days in the range.
