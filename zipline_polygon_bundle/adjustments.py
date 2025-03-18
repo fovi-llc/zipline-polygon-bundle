@@ -64,8 +64,9 @@ def load_splits(
     splits["split_from"] = splits["split_from"].astype(float)
     splits["split_to"] = splits["split_to"].astype(float)
     splits["ratio"] = splits["split_from"] / splits["split_to"]
-    splits.drop(columns=["ticker", "split_from", "split_to"], inplace=True)
-    return splits
+    # Only return columns Zipline wants.
+    # Polygon may add more columns in the future (as they did with `id`).
+    return splits[["sid", "effective_date", "ratio"]]
 
 
 def load_polygon_dividends(
@@ -87,7 +88,9 @@ def load_polygon_dividends(
         dividends = pd.DataFrame(dividends)
         os.makedirs(os.path.dirname(dividends_path), exist_ok=True)
         dividends.to_parquet(dividends_path)
-        print(f"Wrote {len(dividends)=} from Polygon list_dividends to {dividends_path=}")
+        print(
+            f"Wrote {len(dividends)=} from Polygon list_dividends to {dividends_path=}"
+        )
         # if len(dividends) < 10000:
         #     logging.error(f"Only got {len(dividends)=} from Polygon list_dividends.")
     # We will always load from the file to avoid any chance of weird errors.
@@ -116,9 +119,9 @@ def load_chunked_polygon_dividends(
         next_end_date = first_of_next_month - datetime.timedelta(days=1)
         if next_end_date > last_end_date:
             next_end_date = last_end_date
-        dividends_list.append(load_polygon_dividends(
-            config, next_start_end, next_end_date
-        ))
+        dividends_list.append(
+            load_polygon_dividends(config, next_start_end, next_end_date)
+        )
         next_start_end = next_end_date + datetime.timedelta(days=1)
     return pd.concat(dividends_list)
 
@@ -145,10 +148,11 @@ def load_dividends(
         },
         inplace=True,
     )
-    dividends.drop(
-        columns=["ticker", "frequency", "currency", "dividend_type"], inplace=True
-    )
-    return dividends
+    # Only return columns Zipline wants.
+    # Polygon may add more columns in the future (as they did with `id`).
+    return dividends[
+        ["sid", "ex_date", "declared_date", "record_date", "pay_date", "amount"]
+    ]
 
 
 def load_conditions(config: PolygonConfig) -> pd.DataFrame:

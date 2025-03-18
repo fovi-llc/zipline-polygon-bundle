@@ -64,7 +64,7 @@ def generate_tables_from_csv_files(
             "window_start",
             table.column("window_start").cast(schema.field("window_start").type),
         )
-        if schema.field(PARTITION_COLUMN_NAME) is not None:
+        if PARTITION_COLUMN_NAME in schema.names:
             table = table.append_column(
                 PARTITION_COLUMN_NAME,
                 pa.array(
@@ -190,7 +190,7 @@ def concat_all_aggs_from_csv(
             return by_ticker_aggs_arrow_dir
 
     partitioning = None
-    if schema.field(PARTITION_COLUMN_NAME) is not None:
+    if PARTITION_COLUMN_NAME in schema.names:
         partitioning = pa_ds.partitioning(
             pa.schema([(PARTITION_COLUMN_NAME, pa.string())]), flavor="hive"
         )

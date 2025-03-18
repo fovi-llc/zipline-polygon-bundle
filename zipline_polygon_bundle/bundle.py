@@ -7,11 +7,10 @@ from .adjustments import load_splits, load_dividends
 
 import pyarrow
 import pyarrow.compute
+import pyarrow.dataset
 
 import pandas as pd
 import logging
-
-# import concurrent.futures
 
 
 # TODO: Change warnings to be relative to number of days in the range.
@@ -416,7 +415,7 @@ def polygon_equities_bundle_minute(
 
     by_ticker_aggs_arrow_dir = concat_all_aggs_from_csv(config)
     aggregates = pyarrow.dataset.dataset(by_ticker_aggs_arrow_dir)
-    print(f"{aggregates.schema=}")
+    # print(f"{aggregates.schema=}")
     # 3.5 billion rows for 10 years of minute data.
     # print(f"{aggregates.count_rows()=}")
     # Can't sort the dataset because that reads it all into memory.
