@@ -6,6 +6,15 @@ https://api.polygon.io/v3/reference/splits?execution_date.gte=2018-10-10&executi
 {"execution_date":"2018-11-19","id":"Ebe35af5961ac549f7b3c8bb669d4787707e6bf5233cd7b116d1eb04f3402aee3","split_from":10000,"split_to":1,"ticker":"PACDQ"}
 {"execution_date":"2018-11-08","id":"E97787eda3f898b135d081bf9b5486100b9207e269371ff23ffa9cd01b0c83bc8","split_from":2e+06,"split_to":1,"ticker":"NPWZ"}
 
+This guy went thru this same stuff as me about the same time:
+https://github.com/shinathan/polygon.io-stock-database/blob/8674d8061cdd4b7814a3edca478204c70c494fd5/01_introduction.ipynb
+
+Ticker changes
+https://github.com/shinathan/polygon.io-stock-database/blob/main/08_renamings.ipynb
+https://stockanalysis.com/actions/changes/
+
+
+
 
 $ zipline_polygon_bundle % zipline ingest -b polygon
 

@@ -153,3 +153,37 @@ def load_dividends(
     return dividends[
         ["sid", "ex_date", "declared_date", "record_date", "pay_date", "amount"]
     ]
+
+
+def load_conditions(config: PolygonConfig) -> pd.DataFrame:
+    # The API doesn't use dates for the condition codes but this is a way to provide control over caching.
+    # Main thing is to get the current conditions list but we don't want to call more than once a day.
+    conditions_path = config.api_cache_path(
+        start_date=config.start_timestamp.date(), end_date=config.end_timestamp.date(), filename="conditions"
+    )
+    expected_conditions_count = 100
+    if not os.path.exists(conditions_path):
+        client = polygon.RESTClient(api_key=config.api_key)
+        conditions_response = client.list_conditions(
+            limit=1000,
+        )
+        if conditions_response is HTTPResponse:
+            raise ValueError(f"Polygon.list_splits bad HTTPResponse: {conditions_response}")
+        conditions = pd.DataFrame(conditions_response)
+        print(f"Got {len(conditions)=} from Polygon list_conditions.")
+        os.makedirs(os.path.dirname(conditions_path), exist_ok=True)
+        conditions.to_parquet(conditions_path)
+        if len(conditions) < expected_conditions_count:
+            logging.warning(
+                f"Only got {len(conditions)=} from Polygon list_splits (expected {expected_conditions_count=}).  "
+            )
+        # We will always load from the file to avoid any chance of weird errors.
+    if os.path.exists(conditions_path):
+        conditions = pd.read_parquet(conditions_path)
+        print(f"Loaded {len(conditions)=} from {conditions_path}")
+        if len(conditions) < expected_conditions_count:
+            logging.warning(
+                f"Only got {len(conditions)=} from cached conditions (expected {expected_conditions_count=}).  "
+            )
+        return conditions
+    raise ValueError(f"Failed to load splits from {conditions_path}")

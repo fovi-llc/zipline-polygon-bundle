@@ -32,13 +32,15 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
+fsspec = ">=2024.10"
 python = ">=3.9,<4.0"
-polygon-api-client = "*"
+polygon-api-client = ">=1.14.2"
 pandas = ">=2.2,<3"
+pandas-market-calendars = ">=4.4.2"
 pytz = ">=2018.5"
 requests = ">=2.9.1"
 bcolz-zipline = ">=1.2.11"
-pyarrow = "*"
+pyarrow = ">=18.1.0,<19"
 numpy = "<2"
 toolz = ">=0.8.2"
 zipline-reloaded = ">=3.1"

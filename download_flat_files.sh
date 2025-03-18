@@ -174,3 +174,7 @@ aws s3 sync s3://flatfiles/us_stocks_sip/quotes_v1 \
 aws s3 sync s3://flatfiles/us_stocks_sip/day_aggs_v1 \
     $POLYGON_DATA_DIR/flatfiles/us_stocks_sip/day_aggs_v1 \
     --checksum-mode ENABLED  --endpoint-url https://files.polygon.io;
+
+aws s3 sync s3://flatfiles/us_stocks_sip \
+    $POLYGON_DATA_DIR/flatfiles/us_stocks_sip \
+    --checksum-mode ENABLED  --endpoint-url https://files.polygon.io;

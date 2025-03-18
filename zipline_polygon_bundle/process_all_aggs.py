@@ -74,8 +74,8 @@ if __name__ == "__main__":
     config = PolygonConfig(
         environ=os.environ,
         calendar_name="XNYS",
-        start_session="2020-10-07",
-        end_session="2020-10-15",
+        start_date="2020-10-07",
+        end_date="2020-10-15",
     )
     print(f"{config.aggs_dir=}")
     max_ticker_lens = apply_to_all_aggs(
