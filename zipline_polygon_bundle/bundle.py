@@ -1,5 +1,9 @@
+import os
 from zipline.data.bundles import register
 from zipline.data.resample import minute_frame_to_session_frame
+
+from exchange_calendars.calendar_helpers import parse_date
+from zipline.utils.calendar_utils import get_calendar
 
 from .config import PolygonConfig
 from .concat_all_aggs import concat_all_aggs_from_csv, generate_csv_agg_tables
@@ -494,6 +498,25 @@ def register_polygon_equities_bundle(
 ):
     if agg_time not in ["day", "minute"]:
         raise ValueError(f"agg_time must be 'day' or 'minute', not '{agg_time}'")
+    # We need to know the start and end dates of the session before the bundle is
+    # registered because even though we only need it for ingest, the metadata in 
+    # the writer is initialized and written before our ingest function is called.
+    if start_date is None or end_date is None:
+        config = PolygonConfig(
+            environ=os.environ,
+            calendar_name=calendar_name,
+            start_date=start_date,
+            end_date=end_date,
+            agg_time=agg_time,
+        )
+        first_aggs_date, last_aggs_date = config.find_first_and_last_aggs()
+        if start_date is None:
+            start_date = first_aggs_date
+        if end_date is None:
+            end_date = last_aggs_date
+
+    calendar = get_calendar(calendar_name)
+
     register(
         bundlename,
         (
@@ -501,8 +524,8 @@ def register_polygon_equities_bundle(
             if agg_time == "minute"
             else polygon_equities_bundle_day
         ),
-        start_date=start_date,
-        end_date=end_date,
+        start_session=parse_date(start_date, calendar=calendar),
+        end_session=parse_date(end_date, calendar=calendar),
         calendar_name=calendar_name,
         # minutes_per_day=390,
         # create_writers=True,

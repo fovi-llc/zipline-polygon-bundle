@@ -1,7 +1,7 @@
 from .config import PolygonConfig
 
 import shutil
-from typing import Iterator, Tuple
+from typing import Iterator, Tuple, List, Union
 
 import argparse
 import glob
@@ -10,6 +10,7 @@ import os
 import pyarrow as pa
 from pyarrow import dataset as pa_ds
 from pyarrow import csv as pa_csv
+from pyarrow import compute as pa_compute
 
 import pandas as pd
 
@@ -34,7 +35,7 @@ def to_partition_key(s: str) -> str:
 
 
 def generate_tables_from_csv_files(
-    paths: list,
+    paths: Iterator[Union[str, os.PathLike]],
     schema: pa.Schema,
     start_timestamp: pd.Timestamp,
     limit_timestamp: pd.Timestamp,
@@ -57,7 +58,7 @@ def generate_tables_from_csv_files(
             quoted_strings_can_be_null=False,
         )
 
-        table = pa.csv.read_csv(path, convert_options=convert_options)
+        table = pa_csv.read_csv(path, convert_options=convert_options)
         tables_read_count += 1
         table = table.set_column(
             table.column_names.index("window_start"),
@@ -75,10 +76,10 @@ def generate_tables_from_csv_files(
                 ),
             )
         expr = (
-            pa.compute.field("window_start")
+            pa_compute.field("window_start")
             >= pa.scalar(start_timestamp, type=schema.field("window_start").type)
         ) & (
-            pa.compute.field("window_start")
+            pa_compute.field("window_start")
             < pa.scalar(
                 limit_timestamp,
                 type=schema.field("window_start").type,
@@ -101,22 +102,8 @@ def generate_tables_from_csv_files(
 
 def generate_csv_agg_tables(
     config: PolygonConfig,
-) -> Tuple[list[str], pa.Schema, Iterator[pa.Table]]:
+) -> Tuple[pa.Schema, Iterator[pa.Table]]:
     """zipline does bundle ingestion one ticker at a time."""
-    # We sort by path because they have the year and month in the dir names and the date in the filename.
-    paths = sorted(
-        list(
-            glob.glob(
-                os.path.join(config.aggs_dir, config.csv_paths_pattern),
-                recursive="**" in config.csv_paths_pattern,
-            )
-        )
-    )
-
-    print(f"{len(paths)=}")
-    if len(paths) > 0:
-        print(f"{paths[0]=}")
-        print(f"{paths[-1]=}")
 
     # Polygon Aggregate flatfile timestamps are in nanoseconds (like trades), not milliseconds as the docs say.
     # I make the timestamp timezone-aware because that's how Unix timestamps work and it may help avoid mistakes.
@@ -154,11 +141,11 @@ def generate_csv_agg_tables(
             pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False)
         )
 
+    # TODO: Use generator like os.walk for paths.
     return (
-        paths,
         polygon_aggs_schema,
         generate_tables_from_csv_files(
-            paths=paths,
+            paths=config.csv_paths(),
             schema=polygon_aggs_schema,
             start_timestamp=config.start_timestamp,
             limit_timestamp=config.end_timestamp + pd.to_timedelta(1, unit="day"),
@@ -176,11 +163,9 @@ def concat_all_aggs_from_csv(
     config: PolygonConfig,
     overwrite: bool = False,
 ) -> str:
-    paths, schema, tables = generate_csv_agg_tables(config)
+    schema, tables = generate_csv_agg_tables(config)
 
-    if len(paths) < 1:
-        raise ValueError(f"No Polygon CSV flat files found in {config.aggs_dir=}")
-    by_ticker_aggs_arrow_dir = config.by_ticker_aggs_arrow_dir(paths[0], paths[-1])
+    by_ticker_aggs_arrow_dir = config.by_ticker_aggs_arrow_dir
     if os.path.exists(by_ticker_aggs_arrow_dir):
         if overwrite:
             print(f"Removing {by_ticker_aggs_arrow_dir=}")
