@@ -61,7 +61,8 @@ class PolygonConfig:
         # TODO: Restore non-recusive option.  Always recursive for now.
         self.csv_paths_pattern = environ.get(
             # "POLYGON_FLAT_FILES_CSV_PATTERN", "**/*.csv.gz"
-            "POLYGON_FLAT_FILES_CSV_PATTERN", "*.csv.gz"
+            "POLYGON_FLAT_FILES_CSV_PATTERN",
+            "*.csv.gz",
         )
         self.asset_files_dir = os.path.join(self.flat_files_dir, self.asset_subdir)
         self.minute_aggs_dir = os.path.join(self.asset_files_dir, "minute_aggs_v1")
@@ -131,8 +132,10 @@ class PolygonConfig:
 
     @property
     def by_ticker_aggs_arrow_dir(self):
-        return os.path.join(self.by_ticker_dir,
-                            f"{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.arrow")
+        return os.path.join(
+            self.by_ticker_dir,
+            f"{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.arrow",
+        )
 
     def api_cache_path(
         self, start_date: Date, end_date: Date, filename: str, extension=".parquet"
@@ -153,13 +156,13 @@ class PolygonConfig:
                 for filename in sorted(filenames):
                     yield os.path.join(root, filename)
 
-    def find_first_and_last_aggs(self) -> Tuple[str, str]:
+    def find_first_and_last_aggs(self, aggs_dir, file_pattern) -> Tuple[str, str]:
         # Find the path to the lexically first and last paths in aggs_dir that matches csv_paths_pattern.
         # Would like to use Path.walk(top_down=True) but it is only availble in Python 3.12+.
         # This needs to be efficient because it is called on every init, even though we only need it for ingest.
         # But we can't call it in ingest because the writer initializes and writes the metadata before it is called.
         paths = []
-        for root, dirnames, filenames in os.walk(self.aggs_dir, topdown=True):
+        for root, dirnames, filenames in os.walk(aggs_dir, topdown=True):
             if dirnames:
                 # We only want first and last in each directory.
                 sorted_dirs = sorted(dirnames)
@@ -169,7 +172,7 @@ class PolygonConfig:
                     else sorted_dirs
                 )
             # Filter out filenames that don't match the pattern.
-            filenames = fnmatch.filter(filenames, self.csv_paths_pattern)
+            filenames = fnmatch.filter(filenames, file_pattern)
             if filenames:
                 filenames = sorted(filenames)
                 paths.append(os.path.join(root, filenames[0]))
@@ -177,7 +180,9 @@ class PolygonConfig:
                     paths.append(os.path.join(root, filenames[-1]))
         paths = sorted(paths)
         if len(paths) < 2:
-            raise ValueError(f"Need more than one aggs file but found {len(paths)} paths in {self.aggs_dir}")
+            raise ValueError(
+                f"Need more than one aggs file but found {len(paths)} paths in {self.aggs_dir}"
+            )
         return self.file_path_to_name(paths[0]), self.file_path_to_name(paths[-1])
 
 
