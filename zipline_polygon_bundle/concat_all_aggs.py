@@ -1,10 +1,9 @@
-from .config import PolygonConfig
+from .config import PolygonConfig, PARTITION_COLUMN_NAME, to_partition_key
 
 import shutil
 from typing import Iterator, Tuple, List, Union
 
 import argparse
-import glob
 import os
 
 import pyarrow as pa
@@ -13,25 +12,6 @@ from pyarrow import csv as pa_csv
 from pyarrow import compute as pa_compute
 
 import pandas as pd
-
-
-PARTITION_COLUMN_NAME = "part"
-PARTITION_KEY_LENGTH = 2
-
-
-def to_partition_key(s: str) -> str:
-    """
-    Partition key is low cardinality and must be filesystem-safe.
-    The reason for partitioning is to keep the parquet files from getting too big.
-    10 years of minute aggs for US stocks is 83GB gzipped.  A single parquet would be 62GB on disk.
-    Currently the first two characters so files stay under 1GB.  Weird characters are replaced with "A".
-    """
-    k = (s + "A")[0:PARTITION_KEY_LENGTH].upper()
-    if k.isalpha():
-        return k
-    # Replace non-alpha characters with "A".
-    k = "".join([c if c.isalpha() else "A" for c in k])
-    return k
 
 
 def generate_tables_from_csv_files(

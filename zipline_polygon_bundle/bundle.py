@@ -3,11 +3,13 @@ from zipline.data.bundles import register
 from zipline.data.resample import minute_frame_to_session_frame
 
 from exchange_calendars.calendar_helpers import parse_date
-from zipline.utils.calendar_utils import get_calendar
+from exchange_calendars.calendar_utils import get_calendar
 
-from .config import PolygonConfig
 from .concat_all_aggs import concat_all_aggs_from_csv, generate_csv_agg_tables
 from .adjustments import load_splits, load_dividends
+from .config import PolygonConfig
+from .nyse_all_hours_calendar import register_nyse_all_hours_calendar
+from .trades import convert_trades_to_custom_aggs, scatter_custom_aggs_to_by_ticker
 
 import pyarrow
 import pyarrow.compute
@@ -29,7 +31,7 @@ def symbol_to_upper(s: str) -> str:
 def generate_all_agg_tables_from_csv(
     config: PolygonConfig,
 ):
-    paths, schema, tables = generate_csv_agg_tables(config)
+    schema, tables = generate_csv_agg_tables(config)
     for table in tables:
         table = table.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
         yield table
@@ -209,7 +211,19 @@ def polygon_equities_bundle_day(
         )
     )
 
-    table = aggregates.to_table()
+    # Only get the columns Zipline allows.
+    table = aggregates.to_table(
+        columns=[
+            "ticker",
+            "window_start",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "transactions",
+        ]
+    )
     table = rename_polygon_to_zipline(table, "day")
     # Get all the symbols in the table by using value_counts to tabulate the unique values.
     # pyarrow.Table.column returns a pyarrow.ChunkedArray.
@@ -254,7 +268,19 @@ def process_minute_fragment(
     dates_with_data: set,
     agg_time: str,
 ):
-    table = fragment.to_table()
+    # Only get the columns Zipline allows.
+    table = fragment.to_table(
+        columns=[
+            "ticker",
+            "window_start",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "transactions",
+        ]
+    )
     print(f" {table.num_rows=}")
     table = rename_polygon_to_zipline(table, "timestamp")
     table = table.sort_by([("symbol", "ascending"), ("timestamp", "ascending")])
@@ -486,6 +512,97 @@ def polygon_equities_bundle_minute(
     adjustment_writer.write(splits=splits, dividends=dividends)
 
 
+def polygon_equities_bundle_trades(
+    environ,
+    asset_db_writer,
+    minute_bar_writer,
+    daily_bar_writer,
+    adjustment_writer,
+    calendar,
+    start_date,
+    end_date,
+    cache,
+    show_progress,
+    output_dir,
+):
+    # TODO: Support agg durations other than `1min`.
+    config = PolygonConfig(
+        environ=environ,
+        calendar_name=calendar.name,
+        start_date=start_date,
+        end_date=end_date,
+        agg_time="1min",
+    )
+
+    convert_trades_to_custom_aggs(config, overwrite=False)
+    by_ticker_aggs_arrow_dir = scatter_custom_aggs_to_by_ticker(config)
+    aggregates = pyarrow.dataset.dataset(by_ticker_aggs_arrow_dir)
+    # 3.5 billion rows for 10 years of minute data.
+    # print(f"{aggregates.count_rows()=}")
+    # Can't sort the dataset because that reads it all into memory.
+    # aggregates = aggregates.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
+    # print("Sorted")
+
+    # Zipline uses case-insensitive symbols, so we need to convert them to uppercase with a ^ prefix when lowercase.
+    # This is because the SQL schema zipline uses for symbols ignores case.
+    # We put the original symbol in the asset_name field.
+    metadata = pd.DataFrame(
+        columns=(
+            "start_date",
+            "end_date",
+            "auto_close_date",
+            "symbol",
+            "exchange",
+            "asset_name",
+        )
+    )
+
+    symbol_to_sid = {}
+    dates_with_data = set()
+
+    # Get data for all stocks and write to Zipline
+    daily_bar_writer.write(
+        process_minute_aggregates(
+            fragments=aggregates.get_fragments(),
+            sessions=calendar.sessions_in_range(start_date, end_date),
+            minutes=calendar.sessions_minutes(start_date, end_date),
+            metadata=metadata,
+            calendar=calendar,
+            symbol_to_sid=symbol_to_sid,
+            dates_with_data=dates_with_data,
+            agg_time="day",
+        ),
+        show_progress=show_progress,
+    )
+
+    # Get data for all stocks and write to Zipline
+    minute_bar_writer.write(
+        process_minute_aggregates(
+            fragments=aggregates.get_fragments(),
+            sessions=calendar.sessions_in_range(start_date, end_date),
+            minutes=calendar.sessions_minutes(start_date, end_date),
+            metadata=metadata,
+            calendar=calendar,
+            symbol_to_sid=symbol_to_sid,
+            dates_with_data=dates_with_data,
+            agg_time="minute",
+        ),
+        show_progress=show_progress,
+    )
+
+    # Write the metadata
+    asset_db_writer.write(equities=metadata)
+
+    # Load splits and dividends
+    first_start_end = min(dates_with_data)
+    last_end_date = max(dates_with_data)
+    splits = load_splits(config, first_start_end, last_end_date, symbol_to_sid)
+    dividends = load_dividends(config, first_start_end, last_end_date, symbol_to_sid)
+
+    # Write splits and dividends
+    adjustment_writer.write(splits=splits, dividends=dividends)
+
+
 def register_polygon_equities_bundle(
     bundlename,
     start_date=None,
@@ -496,10 +613,15 @@ def register_polygon_equities_bundle(
     # watchlists=None,
     # include_asset_types=None,
 ):
-    if agg_time not in ["day", "minute"]:
-        raise ValueError(f"agg_time must be 'day' or 'minute', not '{agg_time}'")
+    register_nyse_all_hours_calendar()
+
+    if agg_time not in ["day", "minute", "1min"]:
+        raise ValueError(
+            f"agg_time must be 'day', 'minute' (aggs), or '1min' (trades), not '{agg_time}'"
+        )
+
     # We need to know the start and end dates of the session before the bundle is
-    # registered because even though we only need it for ingest, the metadata in 
+    # registered because even though we only need it for ingest, the metadata in
     # the writer is initialized and written before our ingest function is called.
     if start_date is None or end_date is None:
         config = PolygonConfig(
@@ -509,23 +631,28 @@ def register_polygon_equities_bundle(
             end_date=end_date,
             agg_time=agg_time,
         )
-        first_aggs_date, last_aggs_date = config.find_first_and_last_aggs()
+        first_aggs_date, last_aggs_date = config.find_first_and_last_aggs(
+            config.aggs_dir if agg_time in ["day", "minute"] else config.trades_dir,
+            config.csv_paths_pattern,
+        )
         if start_date is None:
             start_date = first_aggs_date
         if end_date is None:
             end_date = last_aggs_date
 
-    calendar = get_calendar(calendar_name)
-
     register(
         bundlename,
         (
-            polygon_equities_bundle_minute
-            if agg_time == "minute"
-            else polygon_equities_bundle_day
+            polygon_equities_bundle_day
+            if agg_time == "day"
+            else (
+                polygon_equities_bundle_minute
+                if agg_time == "minute"
+                else polygon_equities_bundle_trades
+            )
         ),
-        start_session=parse_date(start_date, calendar=calendar),
-        end_session=parse_date(end_date, calendar=calendar),
+        start_session=parse_date(start_date, raise_oob=False) if start_date else None,
+        end_session=parse_date(end_date, raise_oob=False) if end_date else None,
         calendar_name=calendar_name,
         # minutes_per_day=390,
         # create_writers=True,

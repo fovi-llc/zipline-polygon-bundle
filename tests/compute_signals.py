@@ -10,7 +10,13 @@ import pyarrow as pa
 
 def get_valid_tickers(config: PolygonConfig):
     tickers = get_ticker_universe(config)
-    return pa.array([ticker for ticker in tickers.index.get_level_values('ticker').to_list() if "TEST" not in ticker])
+    return pa.array(
+        [
+            ticker
+            for ticker in tickers.index.get_level_values("ticker").to_list()
+            if "TEST" not in ticker
+        ]
+    )
 
 
 # export POLYGON_TICKERS_DIR=/home/jovyan/data/tickers
@@ -59,10 +65,12 @@ if __name__ == "__main__":
 
     # print(f"{from_config.api_key=}")
     valid_tickers = get_valid_tickers(from_config)
-    signals_ds_path = compute_signals_for_all_custom_aggs(from_config=from_config,
-                                                          to_config=to_config,
-                                                          valid_tickers=valid_tickers,
-                                                          overwrite=args.overwrite)
+    signals_ds_path = compute_signals_for_all_custom_aggs(
+        from_config=from_config,
+        to_config=to_config,
+        valid_tickers=valid_tickers,
+        overwrite=args.overwrite,
+    )
     print(f"Computed signals for aggregates to {signals_ds_path=}")
 
     # print(f"{config.aggs_dir=}")

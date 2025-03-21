@@ -48,7 +48,10 @@ class PolygonAssets:
         active: bool = True,
     ):
         response = self.polygon_client.list_tickers(
-            market=self.config.market, active=active, date=date.date(), limit=500
+            market=self.config.market,
+            active=active,
+            date=date.date().isoformat(),
+            limit=500,
         )
         tickers_df = pd.DataFrame(list(response))
         # The currency info is for crypto.  The source_feed is always NA.
