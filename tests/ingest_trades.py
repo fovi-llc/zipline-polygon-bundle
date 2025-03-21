@@ -13,7 +13,7 @@ if __name__ == "__main__":
     # parser.add_argument("--start_date", default="2020-01-01")
     # parser.add_argument("--end_date", default="2020-12-31")
 
-    parser.add_argument("--agg_duration", default="1min")
+    parser.add_argument("--agg_time", default="1min")
 
     parser.add_argument("--overwrite", action="store_true")
 
@@ -35,10 +35,10 @@ if __name__ == "__main__":
     if args.start_date is None or args.end_date is None:
         config = PolygonConfig(
             environ=os.environ,
-            calendar_name=calendar_name,
-            start_date=start_date,
-            end_date=end_date,
-            agg_time=agg_time,
+            calendar_name=args.calendar_name,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            agg_time=args.agg_time,
         )
         first_aggs_date, last_aggs_date = config.find_first_and_last_aggs(
             config.trades_dir, config.csv_paths_pattern
@@ -53,7 +53,7 @@ if __name__ == "__main__":
         calendar_name=args.calendar_name,
         start_date=args.start_date,
         end_date=args.end_date,
-        agg_time=args.agg_duration,
+        agg_time=args.agg_time,
     )
 
     convert_trades_to_custom_aggs(config, overwrite=args.overwrite)
