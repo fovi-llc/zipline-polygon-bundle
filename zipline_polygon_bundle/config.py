@@ -160,10 +160,11 @@ class PolygonConfig:
         # Only reason to separate them is if we're worried about (or want) data being different across ingestions.
         # This scattering is really slow and is usually gonna be redundant.
         # This wasn't a problem when start/end dates were the calendar bounds when omitted.
+        # Can't just drop this because concat_all_aggs_from_csv will skip if it exists.
         return os.path.join(
             self.by_ticker_dir,
-            # f"{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.arrow",
-            "aggs.arrow",
+            f"{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.arrow",
+            # "aggs.arrow",
         )
 
     def api_cache_path(
@@ -185,7 +186,7 @@ class PolygonConfig:
                 for filename in sorted(filenames):
                     yield os.path.join(root, filename)
 
-    def find_first_and_last_aggs(self, aggs_dir, file_pattern) -> Tuple[str, str]:
+    def find_first_and_last_aggs(self, aggs_dir, file_pattern) -> Tuple[str | None, str | None]:
         # Find the path to the lexically first and last paths in aggs_dir that matches csv_paths_pattern.
         # Would like to use Path.walk(top_down=True) but it is only availble in Python 3.12+.
         # This needs to be efficient because it is called on every init, even though we only need it for ingest.
@@ -207,11 +208,9 @@ class PolygonConfig:
                 paths.append(os.path.join(root, filenames[0]))
                 if len(filenames) > 1:
                     paths.append(os.path.join(root, filenames[-1]))
+        if not paths:
+            return None, None
         paths = sorted(paths)
-        if len(paths) < 2:
-            raise ValueError(
-                f"Need more than one aggs file but found {len(paths)} paths in {self.aggs_dir}"
-            )
         return self.file_path_to_name(paths[0]), self.file_path_to_name(paths[-1])
 
 

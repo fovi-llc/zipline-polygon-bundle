@@ -651,8 +651,8 @@ def register_polygon_equities_bundle(
                 else polygon_equities_bundle_trades
             )
         ),
-        start_session=parse_date(start_date, raise_oob=False),
-        end_session=parse_date(end_date, raise_oob=False),
+        start_session=parse_date(start_date, raise_oob=False) if start_date else None,
+        end_session=parse_date(end_date, raise_oob=False) if end_date else None,
         calendar_name=calendar_name,
         # minutes_per_day=390,
         # create_writers=True,
