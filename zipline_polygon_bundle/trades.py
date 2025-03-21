@@ -1,6 +1,6 @@
-from .config import PolygonConfig
+from .config import PolygonConfig, PARTITION_COLUMN_NAME, to_partition_key
 
-from typing import Iterator, Tuple
+from typing import Iterator, Tuple, Union
 
 import pyarrow as pa
 import pyarrow.dataset as pa_ds
@@ -12,9 +12,10 @@ from fsspec.implementations.arrow import ArrowFSWrapper
 
 import os
 import datetime
+import shutil
+
 import numpy as np
 import pandas as pd
-
 import pandas_ta as ta
 
 
@@ -369,9 +370,8 @@ def generate_csv_trades_tables(
     if not overwrite:
         custom_aggs_dates = get_custom_aggs_dates(config)
     schedule = config.calendar.trading_index(
-        start=config.start_timestamp,
-        end=config.end_timestamp,
-        period="1D")
+        start=config.start_timestamp, end=config.end_timestamp, period="1D"
+    )
     for timestamp in schedule:
         date = timestamp.to_pydatetime().date()
         if date in custom_aggs_dates:
@@ -456,38 +456,40 @@ def trades_to_custom_aggs(
     return table
 
 
-def generate_custom_agg_batches_from_tables(config: PolygonConfig) -> pa.RecordBatch:
-    for date, trades_table in generate_csv_trades_tables(config):
-        for batch in trades_to_custom_aggs(config, date, trades_table).to_batches():
-            yield batch
-        del trades_table
+# def generate_custom_agg_batches_from_tables(config: PolygonConfig) -> pa.RecordBatch:
+#     for date, trades_table in generate_csv_trades_tables(config):
+#         for batch in trades_to_custom_aggs(config, date, trades_table).to_batches():
+#             yield batch
+#         del trades_table
 
 
-def generate_custom_agg_tables(config: PolygonConfig) -> pa.Table:
-    for date, trades_table in generate_csv_trades_tables(config):
-        yield trades_to_custom_aggs(config, date, trades_table)
+# def generate_custom_agg_tables(config: PolygonConfig) -> pa.Table:
+#     for date, trades_table in generate_csv_trades_tables(config):
+#         yield trades_to_custom_aggs(config, date, trades_table)
 
 
-def configure_write_custom_aggs_to_dataset(config: PolygonConfig):
-    def write_custom_aggs_to_dataset(args: Tuple[datetime.date, pa.Table]):
-        date, table = args
-        pa_ds.write_dataset(
-            trades_to_custom_aggs(config, date, table),
-            filesystem=config.filesystem,
-            base_dir=config.custom_aggs_dir,
-            partitioning=custom_aggs_partitioning(),
-            format="parquet",
-            existing_data_behavior="overwrite_or_ignore",
-        )
+# def configure_write_custom_aggs_to_dataset(config: PolygonConfig):
+#     def write_custom_aggs_to_dataset(args: Tuple[datetime.date, pa.Table]):
+#         date, table = args
+#         pa_ds.write_dataset(
+#             trades_to_custom_aggs(config, date, table),
+#             filesystem=config.filesystem,
+#             base_dir=config.custom_aggs_dir,
+#             partitioning=custom_aggs_partitioning(),
+#             format="parquet",
+#             existing_data_behavior="overwrite_or_ignore",
+#         )
 
-    return write_custom_aggs_to_dataset
+#     return write_custom_aggs_to_dataset
 
 
 def file_visitor(written_file):
     print(f"{written_file.path=}")
 
 
-def convert_trades_to_custom_aggs(config: PolygonConfig, overwrite: bool = False) -> str:
+def convert_trades_to_custom_aggs(
+    config: PolygonConfig, overwrite: bool = False
+) -> str:
     if overwrite:
         print("WARNING: overwrite not implemented/ignored.")
 
@@ -557,11 +559,107 @@ def convert_trades_to_custom_aggs(config: PolygonConfig, overwrite: bool = False
 #     return mfi
 
 
-def concat_custom_aggs_to_by_ticker(
+# def generate_custom_agg_tables(
+#     config: PolygonConfig,
+# ) -> Tuple[pa.Schema, Iterator[pa.Table]]:
+#     """zipline does bundle ingestion one ticker at a time."""
+
+#     # Polygon Aggregate flatfile timestamps are in nanoseconds (like trades), not milliseconds as the docs say.
+#     # I make the timestamp timezone-aware because that's how Unix timestamps work and it may help avoid mistakes.
+#     timestamp_type = pa.timestamp("ns", tz="UTC")
+
+#     # But we can't use the timestamp type in the schema here because it's not supported by the CSV reader.
+#     # So we'll use int64 and cast it after reading the CSV file.
+#     # https://github.com/apache/arrow/issues/44030
+
+#     # strptime(3) (used by CSV reader for timestamps in ConvertOptions.timestamp_parsers) supports Unix timestamps (%s) and milliseconds (%f) but not nanoseconds.
+#     # https://www.geeksforgeeks.org/how-to-use-strptime-with-milliseconds-in-python/
+#     # Actually that's the wrong strptime (it's Python's).  C++ strptime(3) doesn't even support %f.
+#     # https://github.com/apache/arrow/issues/39839#issuecomment-1915981816
+#     # Also I don't think you can use those in a format string without a separator.
+
+#     # Polygon price scale is 4 decimal places (i.e. hundredths of a penny), but we'll use 10 because we have precision to spare.
+#     # price_type = pa.decimal128(precision=38, scale=10)
+#     # 64bit float a little overkill but avoids any plausible truncation error.
+#     price_type = pa.float64()
+
+#     custom_aggs_schema = pa.schema(
+#         [
+#             pa.field("ticker", pa.string(), nullable=False),
+#             pa.field("volume", pa.int64(), nullable=False),
+#             pa.field("open", price_type, nullable=False),
+#             pa.field("close", price_type, nullable=False),
+#             pa.field("high", price_type, nullable=False),
+#             pa.field("low", price_type, nullable=False),
+#             pa.field("window_start", timestamp_type, nullable=False),
+#             pa.field("transactions", pa.int64(), nullable=False),
+#             pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False),
+#         ]
+#     )
+
+#     # TODO: Use generator like os.walk for paths.
+#     return (
+#         custom_aggs_schema,
+#         generate_tables_from_custom_aggs(
+#             paths=config.csv_paths(),
+#             schema=custom_aggs_schema,
+#             start_timestamp=config.start_timestamp,
+#             limit_timestamp=config.end_timestamp + pd.to_timedelta(1, unit="day"),
+#         ),
+#     )
+
+# def get_custom_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
+#     file_info = config.filesystem.get_file_info(config.custom_aggs_dir)
+#     if file_info.type == pa_fs.FileType.NotFound:
+#         return set()
+#     aggs_ds = pa_ds.dataset(
+#         config.custom_aggs_dir,
+#         format="parquet",
+#         schema=custom_aggs_schema(),
+#         partitioning=custom_aggs_partitioning(),
+#     )
+#     return set(
+#         [
+#             pa_ds.get_partition_keys(fragment.partition_expression).get("date")
+#             for fragment in aggs_ds.get_fragments()
+#         ]
+#     )
+
+
+def generate_batches_from_custom_aggs_ds(
+    aggs_ds: pa_ds.Dataset, schedule: pd.DatetimeIndex
+) -> Iterator[pa.RecordBatch]:
+    for timestamp in schedule:
+        date = timestamp.to_pydatetime().date()
+        date_filter_expr = (
+            (pa_compute.field("year") == date.year)
+            & (pa_compute.field("month") == date.month)
+            & (pa_compute.field("date") == date)
+        )
+        for batch in aggs_ds.to_batches(filter=date_filter_expr):
+            # TODO: Check that these rows are within range for this file's date (not just the whole session).
+            # And if we're doing that (figuring date for each file), we can just skip reading the file.
+            # Might able to do a single comparison using compute.days_between.
+            # https://arrow.apache.org/docs/python/generated/pyarrow.compute.days_between.html
+            batch = batch.append_column(
+                PARTITION_COLUMN_NAME,
+                pa.array(
+                    [
+                        to_partition_key(ticker)
+                        for ticker in batch.column("ticker").to_pylist()
+                    ]
+                ),
+            )
+            yield batch
+
+
+def scatter_custom_aggs_to_by_ticker(
     config: PolygonConfig,
     overwrite: bool = False,
 ) -> str:
-    schema, tables = generate_csv_agg_tables(config)
+    file_info = config.filesystem.get_file_info(config.custom_aggs_dir)
+    if file_info.type == pa_fs.FileType.NotFound:
+        raise FileNotFoundError(f"{config.custom_aggs_dir=} not found.")
 
     by_ticker_aggs_arrow_dir = config.by_ticker_aggs_arrow_dir
     if os.path.exists(by_ticker_aggs_arrow_dir):
@@ -572,23 +670,33 @@ def concat_custom_aggs_to_by_ticker(
             print(f"Found existing {by_ticker_aggs_arrow_dir=}")
             return by_ticker_aggs_arrow_dir
 
-    partitioning = None
-    if PARTITION_COLUMN_NAME in schema.names:
-        partitioning = pa_ds.partitioning(
-            pa.schema([(PARTITION_COLUMN_NAME, pa.string())]), flavor="hive"
-        )
+    aggs_ds = pa_ds.dataset(
+        config.custom_aggs_dir,
+        format="parquet",
+        schema=custom_aggs_schema(),
+        partitioning=custom_aggs_partitioning(),
+    )
+    schedule = config.calendar.trading_index(
+        start=config.start_timestamp, end=config.end_timestamp, period="1D"
+    )
+    assert type(schedule) is pd.DatetimeIndex
+    partitioning = pa_ds.partitioning(
+        pa.schema([(PARTITION_COLUMN_NAME, pa.string())]), flavor="hive"
+    )
+    schema = aggs_ds.schema
+    schema = schema.append(pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False))
 
-    # scanner = pa_ds.Scanner.from_batches(source=generate_batches_from_tables(tables), schema=schema)
     pa_ds.write_dataset(
-        generate_batches_from_tables(tables),
+        generate_batches_from_custom_aggs_ds(aggs_ds, schedule),
         schema=schema,
         base_dir=by_ticker_aggs_arrow_dir,
         partitioning=partitioning,
         format="parquet",
         existing_data_behavior="overwrite_or_ignore",
     )
-    print(f"Concatenated aggregates to {by_ticker_aggs_arrow_dir=}")
+    print(f"Scattered custom aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
     return by_ticker_aggs_arrow_dir
+
 
 def calculate_mfi(typical_price: pd.Series, money_flow: pd.Series, period: int):
     mf_sign = np.where(typical_price > np.roll(typical_price, shift=1), 1, -1)
@@ -749,9 +857,8 @@ def iterate_all_aggs_tables(
     valid_tickers: pa.Array,
 ):
     schedule = config.calendar.trading_index(
-        start=config.start_timestamp,
-        end=config.end_timestamp,
-        period="1D")
+        start=config.start_timestamp, end=config.end_timestamp, period="1D"
+    )
     for timestamp in schedule:
         date = timestamp.to_pydatetime().date()
         aggs_ds = pa_ds.dataset(

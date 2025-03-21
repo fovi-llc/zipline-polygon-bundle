@@ -8,7 +8,7 @@ from zipline.utils.calendar_utils import get_calendar
 from .concat_all_aggs import concat_all_aggs_from_csv, generate_csv_agg_tables
 from .adjustments import load_splits, load_dividends
 from .config import PolygonConfig
-from .trades import convert_trades_to_custom_aggs, concat_custom_aggs_to_by_ticker
+from .trades import convert_trades_to_custom_aggs, scatter_custom_aggs_to_by_ticker
 
 import pyarrow
 import pyarrow.compute
@@ -510,7 +510,7 @@ def polygon_equities_bundle_trades(
     )
 
     convert_trades_to_custom_aggs(config, overwrite=False)
-    by_ticker_aggs_arrow_dir = concat_custom_aggs_to_by_ticker(config)
+    by_ticker_aggs_arrow_dir = scatter_custom_aggs_to_by_ticker(config)
     aggregates = pyarrow.dataset.dataset(by_ticker_aggs_arrow_dir)
     # print(f"{aggregates.schema=}")
     # 3.5 billion rows for 10 years of minute data.
@@ -589,8 +589,8 @@ def register_polygon_equities_bundle(
     # watchlists=None,
     # include_asset_types=None,
 ):
-    if agg_time not in ["day", "minute"]:
-        raise ValueError(f"agg_time must be 'day' or 'minute', not '{agg_time}'")
+    if agg_time not in ["day", "minute", "1min"]:
+        raise ValueError(f"agg_time must be 'day', 'minute' (aggs), or '1min' (trades), not '{agg_time}'")
     # We need to know the start and end dates of the session before the bundle is
     # registered because even though we only need it for ingest, the metadata in
     # the writer is initialized and written before our ingest function is called.
@@ -603,7 +603,8 @@ def register_polygon_equities_bundle(
             agg_time=agg_time,
         )
         first_aggs_date, last_aggs_date = config.find_first_and_last_aggs(
-            config.aggs_dir, config.csv_paths_pattern
+            config.aggs_dir if agg_time in ["day", "minute"] else config.trades_dir,
+            config.csv_paths_pattern,
         )
         if start_date is None:
             start_date = first_aggs_date
@@ -615,12 +616,12 @@ def register_polygon_equities_bundle(
     register(
         bundlename,
         (
-            polygon_equities_bundle_minute
-            if agg_time == "minute"
+            polygon_equities_bundle_day
+            if agg_time == "day"
             else (
-                polygon_equities_bundle_trades
-                if agg_time == "trades"
-                else polygon_equities_bundle_day
+                polygon_equities_bundle_minute
+                if agg_time == "minute"
+                else polygon_equities_bundle_trades
             )
         ),
         start_session=parse_date(start_date, calendar=calendar),

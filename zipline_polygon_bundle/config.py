@@ -10,6 +10,25 @@ import re
 import fnmatch
 
 
+PARTITION_COLUMN_NAME = "part"
+PARTITION_KEY_LENGTH = 2
+
+
+def to_partition_key(s: str) -> str:
+    """
+    Partition key is low cardinality and must be filesystem-safe.
+    The reason for partitioning is to keep the parquet files from getting too big.
+    10 years of minute aggs for US stocks is 83GB gzipped.  A single parquet would be 62GB on disk.
+    Currently the first two characters so files stay under 1GB.  Weird characters are replaced with "A".
+    """
+    k = (s + "A")[0:PARTITION_KEY_LENGTH].upper()
+    if k.isalpha():
+        return k
+    # Replace non-alpha characters with "A".
+    k = "".join([c if c.isalpha() else "A" for c in k])
+    return k
+
+
 class PolygonConfig:
     def __init__(
         self,
@@ -132,6 +151,9 @@ class PolygonConfig:
 
     @property
     def by_ticker_aggs_arrow_dir(self):
+        # TODO: Don't split these up by ingestion range.  They're already time indexed.
+        # Only reason to separate them is if we're worried about (or want) data being different across ingestions.
+        # This scattering is really slow and is probably redundant.
         return os.path.join(
             self.by_ticker_dir,
             f"{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.arrow",
