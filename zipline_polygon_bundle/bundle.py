@@ -3,11 +3,12 @@ from zipline.data.bundles import register
 from zipline.data.resample import minute_frame_to_session_frame
 
 from exchange_calendars.calendar_helpers import parse_date
-from zipline.utils.calendar_utils import get_calendar
+from exchange_calendars.calendar_utils import get_calendar
 
 from .concat_all_aggs import concat_all_aggs_from_csv, generate_csv_agg_tables
 from .adjustments import load_splits, load_dividends
 from .config import PolygonConfig
+from .nyse_all_hours_calendar import register_nyse_all_hours_calendar
 from .trades import convert_trades_to_custom_aggs, scatter_custom_aggs_to_by_ticker
 
 import pyarrow
@@ -210,7 +211,19 @@ def polygon_equities_bundle_day(
         )
     )
 
-    table = aggregates.to_table()
+    # Only get the columns Zipline allows.
+    table = aggregates.to_table(
+        columns=[
+            "ticker",
+            "window_start",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "transactions",
+        ]
+    )
     table = rename_polygon_to_zipline(table, "day")
     # Get all the symbols in the table by using value_counts to tabulate the unique values.
     # pyarrow.Table.column returns a pyarrow.ChunkedArray.
@@ -255,7 +268,19 @@ def process_minute_fragment(
     dates_with_data: set,
     agg_time: str,
 ):
-    table = fragment.to_table()
+    # Only get the columns Zipline allows.
+    table = fragment.to_table(
+        columns=[
+            "ticker",
+            "window_start",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "transactions",
+        ]
+    )
     print(f" {table.num_rows=}")
     table = rename_polygon_to_zipline(table, "timestamp")
     table = table.sort_by([("symbol", "ascending"), ("timestamp", "ascending")])
@@ -512,7 +537,6 @@ def polygon_equities_bundle_trades(
     convert_trades_to_custom_aggs(config, overwrite=False)
     by_ticker_aggs_arrow_dir = scatter_custom_aggs_to_by_ticker(config)
     aggregates = pyarrow.dataset.dataset(by_ticker_aggs_arrow_dir)
-    # print(f"{aggregates.schema=}")
     # 3.5 billion rows for 10 years of minute data.
     # print(f"{aggregates.count_rows()=}")
     # Can't sort the dataset because that reads it all into memory.
@@ -589,8 +613,13 @@ def register_polygon_equities_bundle(
     # watchlists=None,
     # include_asset_types=None,
 ):
+    register_nyse_all_hours_calendar()
+
     if agg_time not in ["day", "minute", "1min"]:
-        raise ValueError(f"agg_time must be 'day', 'minute' (aggs), or '1min' (trades), not '{agg_time}'")
+        raise ValueError(
+            f"agg_time must be 'day', 'minute' (aggs), or '1min' (trades), not '{agg_time}'"
+        )
+
     # We need to know the start and end dates of the session before the bundle is
     # registered because even though we only need it for ingest, the metadata in
     # the writer is initialized and written before our ingest function is called.
@@ -611,8 +640,6 @@ def register_polygon_equities_bundle(
         if end_date is None:
             end_date = last_aggs_date
 
-    calendar = get_calendar(calendar_name)
-
     register(
         bundlename,
         (
@@ -624,8 +651,8 @@ def register_polygon_equities_bundle(
                 else polygon_equities_bundle_trades
             )
         ),
-        start_session=parse_date(start_date, calendar=calendar),
-        end_session=parse_date(end_date, calendar=calendar),
+        start_session=parse_date(start_date, raise_oob=False),
+        end_session=parse_date(end_date, raise_oob=False),
         calendar_name=calendar_name,
         # minutes_per_day=390,
         # create_writers=True,

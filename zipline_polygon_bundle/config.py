@@ -1,7 +1,9 @@
-from exchange_calendars.calendar_helpers import Date, parse_date, parse_timestamp
-from zipline.utils.calendar_utils import get_calendar
+from exchange_calendars.calendar_helpers import Date, parse_date
+from exchange_calendars.calendar_utils import get_calendar
 
-from typing import Iterator, Tuple, List
+from .nyse_all_hours_calendar import NYSE_ALL_HOURS
+
+from typing import Iterator, Tuple
 
 import pandas as pd
 from pyarrow.fs import LocalFileSystem
@@ -134,7 +136,10 @@ class PolygonConfig:
 
     @property
     def calendar(self):
-        return get_calendar(self.calendar_name)
+        # If you don't give a start date you'll only get 20 years from today.
+        if self.calendar_name in [NYSE_ALL_HOURS, "us_futures", "CMES", "XNYS", "NYSE"]:
+            return get_calendar(self.calendar_name, side="right", start=pd.Timestamp("1990-01-01"))
+        return get_calendar(self.calendar_name, side="right")
 
     def ticker_file_path(self, date: pd.Timestamp):
         ticker_year_dir = os.path.join(
@@ -153,10 +158,12 @@ class PolygonConfig:
     def by_ticker_aggs_arrow_dir(self):
         # TODO: Don't split these up by ingestion range.  They're already time indexed.
         # Only reason to separate them is if we're worried about (or want) data being different across ingestions.
-        # This scattering is really slow and is probably redundant.
+        # This scattering is really slow and is usually gonna be redundant.
+        # This wasn't a problem when start/end dates were the calendar bounds when omitted.
         return os.path.join(
             self.by_ticker_dir,
-            f"{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.arrow",
+            # f"{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.arrow",
+            "aggs.arrow",
         )
 
     def api_cache_path(

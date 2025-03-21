@@ -6,6 +6,7 @@ from .bundle import (
 )
 
 from .config import PolygonConfig
+from .nyse_all_hours_calendar import NYSE_ALL_HOURS, register_nyse_all_hours_calendar
 from .concat_all_aggs import concat_all_aggs_from_csv, generate_csv_agg_tables
 from .adjustments import load_splits, load_dividends, load_conditions
 from .trades import trades_schema, trades_dataset, cast_trades, date_to_path
@@ -18,6 +19,8 @@ from .tickers_and_names import PolygonAssets, get_ticker_universe
 
 __all__ = [
     "register_polygon_equities_bundle",
+    "register_nyse_all_hours_calendar",
+    "NYSE_ALL_HOURS",
     "symbol_to_upper",
     "polygon_equities_bundle_day",
     "polygon_equities_bundle_minute",
