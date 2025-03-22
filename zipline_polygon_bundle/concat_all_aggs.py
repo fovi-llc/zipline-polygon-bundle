@@ -151,6 +151,7 @@ def concat_all_aggs_from_csv(
             print(f"Removing {by_ticker_aggs_arrow_dir=}")
             shutil.rmtree(by_ticker_aggs_arrow_dir)
         else:
+            # TODO: Validate the existing data.
             print(f"Found existing {by_ticker_aggs_arrow_dir=}")
             return by_ticker_aggs_arrow_dir
 
@@ -169,7 +170,7 @@ def concat_all_aggs_from_csv(
         format="parquet",
         existing_data_behavior="overwrite_or_ignore",
     )
-    print(f"Concatenated aggregates to {by_ticker_aggs_arrow_dir=}")
+    print(f"Scattered aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
     return by_ticker_aggs_arrow_dir
 
 
