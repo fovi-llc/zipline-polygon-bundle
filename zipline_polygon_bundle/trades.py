@@ -516,7 +516,6 @@ def convert_trades_to_custom_aggs(
         aggs_table = trades_to_custom_aggs(config, date, trades_table)
         pa_ds.write_dataset(
             aggs_table,
-            # schema=custom_aggs_schema(),
             filesystem=config.filesystem,
             base_dir=config.aggs_dir,
             partitioning=custom_aggs_partitioning(),
@@ -626,31 +625,58 @@ def convert_trades_to_custom_aggs(
 #     )
 
 
-def generate_batches_from_custom_aggs_ds(
-    aggs_ds: pa_ds.Dataset, schedule: pd.DatetimeIndex
-) -> Iterator[pa.RecordBatch]:
-    for timestamp in schedule:
-        date = timestamp.to_pydatetime().date()
-        date_filter_expr = (
-            (pa_compute.field("year") == date.year)
-            & (pa_compute.field("month") == date.month)
-            & (pa_compute.field("date") == date)
-        )
-        for batch in aggs_ds.to_batches(filter=date_filter_expr):
-            # TODO: Check that these rows are within range for this file's date (not just the whole session).
-            # And if we're doing that (figuring date for each file), we can just skip reading the file.
-            # Might able to do a single comparison using compute.days_between.
-            # https://arrow.apache.org/docs/python/generated/pyarrow.compute.days_between.html
-            batch = batch.append_column(
-                PARTITION_COLUMN_NAME,
-                pa.array(
-                    [
-                        to_partition_key(ticker)
-                        for ticker in batch.column("ticker").to_pylist()
-                    ]
-                ),
-            )
-            yield batch
+# def generate_batches_from_custom_aggs_ds(
+#     aggs_ds: pa_ds.Dataset, schedule: pd.DatetimeIndex
+# ) -> Iterator[pa.RecordBatch]:
+#     for timestamp in schedule:
+#         date = timestamp.to_pydatetime().date()
+#         date_filter_expr = (
+#             (pa_compute.field("year") == date.year)
+#             & (pa_compute.field("month") == date.month)
+#             & (pa_compute.field("date") == date)
+#         )
+#         print(f"{date=}")
+#         for batch in aggs_ds.to_batches(filter=date_filter_expr):
+#             # TODO: Check that these rows are within range for this file's date (not just the whole session).
+#             # And if we're doing that (figuring date for each file), we can just skip reading the file.
+#             # Might able to do a single comparison using compute.days_between.
+#             # https://arrow.apache.org/docs/python/generated/pyarrow.compute.days_between.html
+#             batch = batch.append_column(
+#                 PARTITION_COLUMN_NAME,
+#                 pa.array(
+#                     [
+#                         to_partition_key(ticker)
+#                         for ticker in batch.column("ticker").to_pylist()
+#                     ]
+#                 ),
+#             )
+#             yield batch
+#             # Gotta delete this or we'll run out of memory.
+#             del batch
+
+
+def table_for_date(aggs_ds: pa_ds.Dataset, date: datetime.date) -> pa.Table:
+    date_filter_expr = (
+        (pa_compute.field("year") == date.year)
+        & (pa_compute.field("month") == date.month)
+        & (pa_compute.field("date") == date)
+    )
+    print(f"{date=}")
+    table = aggs_ds.to_table(filter=date_filter_expr)
+    # TODO: Check that these rows are within range for this file's date (not just the whole session).
+    # And if we're doing that (figuring date for each file), we can just skip reading the file.
+    # Might able to do a single comparison using compute.days_between.
+    # https://arrow.apache.org/docs/python/generated/pyarrow.compute.days_between.html
+    table = table.append_column(
+        PARTITION_COLUMN_NAME,
+        pa.array(
+            [
+                to_partition_key(ticker)
+                for ticker in table.column("ticker").to_pylist()
+            ]
+        ),
+    )
+    return table
 
 
 def scatter_custom_aggs_to_by_ticker(
@@ -670,32 +696,92 @@ def scatter_custom_aggs_to_by_ticker(
             print(f"Found existing {by_ticker_aggs_arrow_dir=}")
             return by_ticker_aggs_arrow_dir
 
+    schedule = config.calendar.trading_index(
+        start=config.start_timestamp, end=config.end_timestamp, period="1D"
+    )
+    assert type(schedule) is pd.DatetimeIndex
+
+    print(f"Scattering custom aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
     aggs_ds = pa_ds.dataset(
         config.custom_aggs_dir,
         format="parquet",
         schema=custom_aggs_schema(),
         partitioning=custom_aggs_partitioning(),
     )
-    schedule = config.calendar.trading_index(
-        start=config.start_timestamp, end=config.end_timestamp, period="1D"
-    )
-    assert type(schedule) is pd.DatetimeIndex
-    partitioning = pa_ds.partitioning(
+    by_ticker_partitioning = pa_ds.partitioning(
         pa.schema([(PARTITION_COLUMN_NAME, pa.string())]), flavor="hive"
     )
-    schema = aggs_ds.schema
-    schema = schema.append(pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False))
-
-    pa_ds.write_dataset(
-        generate_batches_from_custom_aggs_ds(aggs_ds, schedule),
-        schema=schema,
-        base_dir=by_ticker_aggs_arrow_dir,
-        partitioning=partitioning,
-        format="parquet",
-        existing_data_behavior="overwrite_or_ignore",
-    )
+    for timestamp in schedule:
+        pa_ds.write_dataset(
+            table_for_date(aggs_ds=aggs_ds, date=timestamp.to_pydatetime().date()),
+            base_dir=by_ticker_aggs_arrow_dir,
+            partitioning=by_ticker_partitioning,
+            format="parquet",
+            existing_data_behavior="overwrite_or_ignore",
+            # file_visitor=file_visitor,
+        )
     print(f"Scattered custom aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
     return by_ticker_aggs_arrow_dir
+
+
+def generate_tables_from_custom_aggs_ds(
+    aggs_ds: pa_ds.Dataset, schedule: pd.DatetimeIndex
+):
+    for timestamp in schedule:
+        yield table_for_date(aggs_ds=aggs_ds, date=timestamp.to_pydatetime().date())
+
+
+# def generate_batches_from_tables(tables):
+#     for table in tables:
+#         for batch in table.to_batches():
+#             yield batch
+
+
+# def scatter_custom_aggs_to_by_ticker(
+#     config: PolygonConfig,
+#     overwrite: bool = False,
+# ) -> str:
+#     file_info = config.filesystem.get_file_info(config.custom_aggs_dir)
+#     if file_info.type == pa_fs.FileType.NotFound:
+#         raise FileNotFoundError(f"{config.custom_aggs_dir=} not found.")
+
+#     by_ticker_aggs_arrow_dir = config.by_ticker_aggs_arrow_dir
+#     if os.path.exists(by_ticker_aggs_arrow_dir):
+#         if overwrite:
+#             print(f"Removing {by_ticker_aggs_arrow_dir=}")
+#             shutil.rmtree(by_ticker_aggs_arrow_dir)
+#         else:
+#             print(f"Found existing {by_ticker_aggs_arrow_dir=}")
+#             return by_ticker_aggs_arrow_dir
+
+#     schedule = config.calendar.trading_index(
+#         start=config.start_timestamp, end=config.end_timestamp, period="1D"
+#     )
+#     assert type(schedule) is pd.DatetimeIndex
+#     aggs_ds = pa_ds.dataset(
+#         config.custom_aggs_dir,
+#         format="parquet",
+#         schema=custom_aggs_schema(),
+#         partitioning=custom_aggs_partitioning(),
+#     )
+#     schema = aggs_ds.schema
+#     schema = schema.append(pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False))
+#     partitioning = pa_ds.partitioning(
+#         pa.schema([(PARTITION_COLUMN_NAME, pa.string())]), flavor="hive"
+#     )
+
+#     print(f"Scattering custom aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
+#     pa_ds.write_dataset(
+#         generate_batches_from_tables(generate_tables_from_custom_aggs_ds(aggs_ds, schedule)),
+#         schema=schema,
+#         base_dir=by_ticker_aggs_arrow_dir,
+#         partitioning=partitioning,
+#         format="parquet",
+#         existing_data_behavior="overwrite_or_ignore",
+#         file_visitor=file_visitor,
+#     )
+#     print(f"Scattered custom aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
+#     return by_ticker_aggs_arrow_dir
 
 
 def calculate_mfi(typical_price: pd.Series, money_flow: pd.Series, period: int):
