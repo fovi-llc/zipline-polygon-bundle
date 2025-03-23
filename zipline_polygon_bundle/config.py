@@ -137,6 +137,7 @@ class PolygonConfig:
     @property
     def calendar(self):
         # If you don't give a start date you'll only get 20 years from today.
+        # "right" side means the end date is included.
         if self.calendar_name in [NYSE_ALL_HOURS, "us_futures", "CMES", "XNYS", "NYSE"]:
             return get_calendar(self.calendar_name, side="right", start=pd.Timestamp("1990-01-01"))
         return get_calendar(self.calendar_name, side="right")

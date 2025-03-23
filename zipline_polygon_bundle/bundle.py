@@ -3,7 +3,6 @@ from zipline.data.bundles import register
 from zipline.data.resample import minute_frame_to_session_frame
 
 from exchange_calendars.calendar_helpers import parse_date
-from exchange_calendars.calendar_utils import get_calendar
 
 from .concat_all_aggs import concat_all_aggs_from_csv, generate_csv_agg_tables
 from .adjustments import load_splits, load_dividends
@@ -295,6 +294,8 @@ def process_minute_fragment(
         sql_symbol = symbol_to_upper(symbol)
         df["symbol"] = sql_symbol
         df = df.set_index("timestamp")
+        # Convert from calendar tz (America/New_York) to UTC for Zipline.
+        df.index = df.index.tz_convert('UTC')
         if agg_time == "day":
             df.drop(columns=["symbol", "transactions"], inplace=True)
             # Check first and last date.
@@ -341,8 +342,8 @@ def process_minute_fragment(
                     calendar.name,
                     symbol,
                 )
-            df = df.reindex(sessions.tz_localize(None))
-            # df = df.reindex(sessions)
+            # df = df.reindex(sessions.tz_localize(None))
+            df = df.reindex(sessions)
             # Missing volume and transactions are zero
             df["volume"] = df["volume"].fillna(0)
             # df["transactions"] = df["transactions"].fillna(0)
@@ -534,6 +535,10 @@ def polygon_equities_bundle_trades(
         agg_time="1min",
     )
 
+    # print(f"{calendar.name=} {start_date=} {end_date=}")
+    # print(f"{calendar.sessions_in_range(start_date, end_date)[-4:]}")
+    # print(f"{calendar.sessions_minutes(start_date, end_date)[-4:]}")
+
     convert_trades_to_custom_aggs(config, overwrite=False)
     by_ticker_aggs_arrow_dir = scatter_custom_aggs_to_by_ticker(config)
     aggregates = pyarrow.dataset.dataset(by_ticker_aggs_arrow_dir)
@@ -609,6 +614,7 @@ def register_polygon_equities_bundle(
     end_date=None,
     calendar_name="XNYS",
     agg_time="day",
+    minutes_per_day=390,
     # ticker_list=None,
     # watchlists=None,
     # include_asset_types=None,
@@ -654,7 +660,7 @@ def register_polygon_equities_bundle(
         start_session=parse_date(start_date, raise_oob=False) if start_date else None,
         end_session=parse_date(end_date, raise_oob=False) if end_date else None,
         calendar_name=calendar_name,
-        # minutes_per_day=390,
+        minutes_per_day=minutes_per_day,
         # create_writers=True,
     )
 
