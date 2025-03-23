@@ -87,7 +87,7 @@ def generate_csv_agg_tables(
 
     # Polygon Aggregate flatfile timestamps are in nanoseconds (like trades), not milliseconds as the docs say.
     # I make the timestamp timezone-aware because that's how Unix timestamps work and it may help avoid mistakes.
-    timestamp_type = pa.timestamp("ns", tz="UTC")
+    timestamp_type = pa.timestamp("ns", tz=config.calendar.tz.key)
 
     # But we can't use the timestamp type in the schema here because it's not supported by the CSV reader.
     # So we'll use int64 and cast it after reading the CSV file.

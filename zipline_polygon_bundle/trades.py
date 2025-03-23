@@ -19,12 +19,13 @@ import pandas as pd
 import pandas_ta as ta
 
 
-def trades_schema(raw: bool = False) -> pa.Schema:
+def trades_schema(raw: bool = False, tz: str = "America/New York") -> pa.Schema:
     # There is some problem reading the timestamps as timestamps so we have to read as integer then change the schema.
     # Polygon Aggregate flatfile timestamps are in nanoseconds (like trades), not milliseconds as the docs say.
     # I make the timestamp timezone-aware because that's how Unix timestamps work and it may help avoid mistakes.
-    # timestamp_type = pa.timestamp("ns", tz="UTC")
-    timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz="UTC")
+    # The timezone is America/New_York because that's the US exchanges timezone and the date is a trading day.
+    # timestamp_type = pa.timestamp("ns", tz="America/New_York")
+    timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz=tz)
 
     # Polygon price scale is 4 decimal places (i.e. hundredths of a penny), but we'll use 10 because we have precision to spare.
     # price_type = pa.decimal128(precision=38, scale=10)
@@ -67,7 +68,7 @@ def trades_dataset(config: PolygonConfig) -> pa_ds.Dataset:
     return pa_ds.FileSystemDataset.from_paths(
         paths,
         format=pa_ds.CsvFileFormat(),
-        schema=trades_schema(raw=True),
+        schema=trades_schema(raw=True, tz=config.calendar.tz.key),
         filesystem=config.filesystem,
     )
 
@@ -94,8 +95,8 @@ def cast_strings_to_list(
     return int_list_array
 
 
-def cast_trades(trades):
-    trades = trades.cast(trades_schema())
+def cast_trades(trades, tz: str = "America/New York") -> pa.Table:
+    trades = trades.cast(trades_schema(tz=tz))
     condition_values = cast_strings_to_list(
         trades.column("conditions").combine_chunks()
     )
@@ -107,8 +108,8 @@ def date_to_path(date, ext=".csv.gz"):
     return date.strftime("%Y/%m/%Y-%m-%d") + ext
 
 
-def custom_aggs_schema(raw: bool = False) -> pa.Schema:
-    timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz="UTC")
+def custom_aggs_schema(raw: bool = False, tz: str = "America/New York") -> pa.Schema:
+    timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz=tz)
     price_type = pa.float64()
     return pa.schema(
         [
@@ -143,7 +144,7 @@ def get_custom_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
     aggs_ds = pa_ds.dataset(
         config.custom_aggs_dir,
         format="parquet",
-        schema=custom_aggs_schema(),
+        schema=custom_aggs_schema(tz=config.calendar.tz.key),
         partitioning=custom_aggs_partitioning(),
     )
     return set(
@@ -373,7 +374,7 @@ def scatter_custom_aggs_to_by_ticker(
     aggs_ds = pa_ds.dataset(
         config.custom_aggs_dir,
         format="parquet",
-        schema=custom_aggs_schema(),
+        schema=custom_aggs_schema(tz=config.calendar.tz.key),
         partitioning=custom_aggs_partitioning(),
     )
     by_ticker_partitioning = pa_ds.partitioning(
@@ -565,7 +566,7 @@ def iterate_all_aggs_tables(
         aggs_ds = pa_ds.dataset(
             config.custom_aggs_dir,
             format="parquet",
-            schema=custom_aggs_schema(),
+            schema=custom_aggs_schema(tz=config.calendar.tz.key),
             partitioning=custom_aggs_partitioning(),
         )
         date_filter_expr = (
