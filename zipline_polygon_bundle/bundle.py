@@ -280,7 +280,7 @@ def process_minute_fragment(
             "transactions",
         ]
     )
-    print(f" {table.num_rows=}")
+    # print(f" {table.num_rows=}")
     table = rename_polygon_to_zipline(table, "timestamp")
     table = table.sort_by([("symbol", "ascending"), ("timestamp", "ascending")])
     table = table.filter(pyarrow.compute.field("timestamp").isin(minutes))
@@ -295,7 +295,7 @@ def process_minute_fragment(
         df["symbol"] = sql_symbol
         df = df.set_index("timestamp")
         # Convert from calendar tz (America/New_York) to UTC for Zipline.
-        df.index = df.index.tz_convert('UTC')
+        df.index = df.index.tz_convert("UTC")
         if agg_time == "day":
             df.drop(columns=["symbol", "transactions"], inplace=True)
             # Check first and last date.
@@ -641,10 +641,15 @@ def register_polygon_equities_bundle(
             config.aggs_dir if agg_time in ["day", "minute"] else config.trades_dir,
             config.csv_paths_pattern,
         )
+        print(f"{first_aggs_date=} {last_aggs_date=}")
         if start_date is None:
             start_date = first_aggs_date
         if end_date is None:
             end_date = last_aggs_date
+
+    start_session = parse_date(start_date, raise_oob=False) if start_date else None
+    end_session = parse_date(end_date, raise_oob=False) if end_date else None
+    print(f"{bundlename=} {agg_time=} {start_session=} {end_session=}")
 
     register(
         bundlename,
@@ -657,8 +662,8 @@ def register_polygon_equities_bundle(
                 else polygon_equities_bundle_trades
             )
         ),
-        start_session=parse_date(start_date, raise_oob=False) if start_date else None,
-        end_session=parse_date(end_date, raise_oob=False) if end_date else None,
+        start_session=start_session,
+        end_session=end_session,
         calendar_name=calendar_name,
         minutes_per_day=minutes_per_day,
         # create_writers=True,

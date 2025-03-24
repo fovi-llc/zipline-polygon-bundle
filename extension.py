@@ -18,16 +18,16 @@ register_polygon_equities_bundle(
 
 register_polygon_equities_bundle(
     "polygon-minute",
-    start_date=parse_date("2020-01-03", raise_oob=False),
-    end_date=parse_date("2021-01-29", raise_oob=False),
+    # start_date=parse_date("2020-01-03", raise_oob=False),
+    # end_date=parse_date("2021-01-29", raise_oob=False),
     agg_time="minute"
 )
 
 register_polygon_equities_bundle(
     "polygon-trades",
     calendar_name=NYSE_ALL_HOURS,
-    start_date=parse_date("2020-01-03", raise_oob=False),
-    end_date=parse_date("2021-01-29", raise_oob=False),
+    # start_date=parse_date("2020-01-03", raise_oob=False),
+    # end_date=parse_date("2021-01-29", raise_oob=False),
     agg_time="1min",
     minutes_per_day=16 * 60,
 )
