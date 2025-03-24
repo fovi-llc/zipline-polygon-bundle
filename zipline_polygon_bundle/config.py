@@ -118,7 +118,7 @@ class PolygonConfig:
                 self.custom_asset_files_dir,
                 self.custom_aggs_name_format.format(config=self),
             )
-            self.aggs_by_ticker_dir = os.path.join(
+            self.by_ticker_dir = os.path.join(
                 self.custom_asset_files_dir,
                 (self.custom_aggs_name_format + "_by_ticker").format(config=self),
             )
