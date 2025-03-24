@@ -60,7 +60,7 @@ if __name__ == "__main__":
         start_date=args.start_date,
         end_date=args.end_date,
         agg_time=args.agg_duration,
-        custom_aggs_format="{config.agg_timedelta.seconds}sec_aggs_signals",
+        custom_aggs_name_format="{config.agg_timedelta.seconds}sec_aggs_signals",
     )
 
     # print(f"{from_config.api_key=}")

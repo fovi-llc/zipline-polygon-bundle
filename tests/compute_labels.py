@@ -136,7 +136,7 @@ if __name__ == "__main__":
     # parser.add_argument("--start_date", default="2020-01-01")
     # parser.add_argument("--end_date", default="2020-12-31")
 
-    parser.add_argument("--agg_duration", default="1min")
+    parser.add_argument("--agg_duration", default="1minute")
 
     parser.add_argument("--overwrite", action="store_true")
 
@@ -166,13 +166,12 @@ if __name__ == "__main__":
         start_date=args.start_date,
         end_date=args.end_date,
         agg_time=args.agg_duration,
-        custom_aggs_format="{config.agg_timedelta.seconds}sec_aggs_labels",
     )
 
     valid_tickers = get_valid_tickers(from_config)
-    os.makedirs(to_config.custom_aggs_dir, exist_ok=True)
+    os.makedirs(to_config.aggs_dir, exist_ok=True)
     signals_file_path = os.path.join(
-        to_config.custom_aggs_dir,
+        to_config.aggs_dir,
         f"labels_{to_config.start_timestamp.date().isoformat()}_{to_config.end_timestamp.date().isoformat()}.parquet",
     )
     print(f"Will write labels to {signals_file_path=}")

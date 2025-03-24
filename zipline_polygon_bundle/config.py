@@ -8,6 +8,7 @@ from typing import Iterator, Tuple
 import pandas as pd
 from pyarrow.fs import LocalFileSystem
 import os
+import datetime
 import re
 import fnmatch
 
@@ -39,7 +40,6 @@ class PolygonConfig:
         start_date: Date,
         end_date: Date,
         agg_time: str = "day",
-        custom_aggs_format: str = "{config.agg_timedelta.seconds}sec_aggs",
     ):
         self.calendar_name = calendar_name
         self.start_date = start_date
@@ -54,6 +54,8 @@ class PolygonConfig:
             if end_date
             else self.calendar.last_session
         )
+        self.agg_time = agg_time
+
         self.max_workers = None
         if environ.get("POLYGON_MAX_WORKERS", "").strip() != "":
             self.max_workers = int(environ.get("POLYGON_MAX_WORKERS"))
@@ -92,25 +94,33 @@ class PolygonConfig:
         self.quotes_dir = os.path.join(self.asset_files_dir, "quotes_v1")
 
         # TODO: The "by ticker" files are temporary/intermediate and should/could be in the zipline data dir.
-        self.minute_by_ticker_dir = os.path.join(
-            self.asset_files_dir, "minute_by_ticker_v1"
+        self.custom_asset_files_dir = environ.get(
+            "CUSTOM_ASSET_FILES_DIR", self.asset_files_dir
         )
-        self.day_by_ticker_dir = os.path.join(self.asset_files_dir, "day_by_ticker_v1")
 
+        self.cache_dir = os.path.join(self.custom_asset_files_dir, "api_cache")
+
+        self.minute_by_ticker_dir = os.path.join(
+            self.custom_asset_files_dir, "minute_by_ticker_v1"
+        )
+        self.day_by_ticker_dir = os.path.join(
+            self.custom_asset_files_dir, "day_by_ticker_v1"
+        )
+
+        # If agg_time begins with a digit, it is a timedelta string and we're using custom aggs from trades.
         if bool(re.match(r"^\d", agg_time)):
             self.agg_timedelta = pd.to_timedelta(agg_time)
-            self.custom_asset_files_dir = environ.get(
-                "CUSTOM_ASSET_FILES_DIR", self.asset_files_dir
+            self.custom_aggs_name_format = environ.get(
+                "CUSTOM_AGGS_NAME_FORMAT", "{config.agg_timedelta.seconds}sec_aggs"
             )
-            self.custom_aggs_dir = os.path.join(
-                self.custom_asset_files_dir, custom_aggs_format.format(config=self)
-            )
-            self.custom_aggs_by_ticker_dir = os.path.join(
+            self.aggs_dir = os.path.join(
                 self.custom_asset_files_dir,
-                (custom_aggs_format + "_by_ticker").format(config=self),
+                self.custom_aggs_name_format.format(config=self),
             )
-            self.aggs_dir = self.custom_aggs_dir
-            self.by_ticker_dir = self.custom_aggs_by_ticker_dir
+            self.aggs_by_ticker_dir = os.path.join(
+                self.custom_asset_files_dir,
+                (self.custom_aggs_name_format + "_by_ticker").format(config=self),
+            )
         elif agg_time == "minute":
             self.agg_timedelta = pd.to_timedelta("1minute")
             self.aggs_dir = self.minute_aggs_dir
@@ -123,7 +133,6 @@ class PolygonConfig:
             raise ValueError(
                 f"agg_time must be 'minute', 'day', or a timedelta string; got '{agg_time=}'"
             )
-        self.agg_time = agg_time
 
         self.arrow_format = environ.get(
             "POLYGON_ARROW_FORMAT", "parquet" if self.agg_time == "day" else "hive"
@@ -132,14 +141,15 @@ class PolygonConfig:
         #     self.by_ticker_dir,
         #     f"{self.agg_time}_{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.hive",
         # )
-        self.cache_dir = os.path.join(self.asset_files_dir, "api_cache")
 
     @property
     def calendar(self):
         # If you don't give a start date you'll only get 20 years from today.
         # "right" side means the end date is included.
         if self.calendar_name in [NYSE_ALL_HOURS, "us_futures", "CMES", "XNYS", "NYSE"]:
-            return get_calendar(self.calendar_name, side="right", start=pd.Timestamp("1990-01-01"))
+            return get_calendar(
+                self.calendar_name, side="right", start=pd.Timestamp("1990-01-01")
+            )
         return get_calendar(self.calendar_name, side="right")
 
     def ticker_file_path(self, date: pd.Timestamp):
@@ -155,6 +165,9 @@ class PolygonConfig:
         # TODO: Use csv_paths_pattern to remove the suffixes
         return os.path.basename(path).removesuffix(".gz").removesuffix(".csv")
 
+    def date_to_aggs_file_path(self, date: datetime.date, ext=".csv.gz"):
+        return f"{self.aggs_dir}/{date.strftime('%Y/%m/%Y-%m-%d') + ext}"
+
     @property
     def by_ticker_aggs_arrow_dir(self):
         # TODO: Don't split these up by ingestion range.  They're already time indexed.
@@ -162,11 +175,12 @@ class PolygonConfig:
         # This scattering is really slow and is usually gonna be redundant.
         # This wasn't a problem when start/end dates were the calendar bounds when omitted.
         # Can't just drop this because concat_all_aggs_from_csv will skip if it exists.
-        return os.path.join(
-            self.by_ticker_dir,
-            f"{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.arrow",
-            # "aggs.arrow",
-        )
+        # return os.path.join(
+        #     self.by_ticker_dir,
+        #     f"{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.arrow",
+        #     # "aggs.arrow",
+        # )
+        return self.by_ticker_dir
 
     def api_cache_path(
         self, start_date: Date, end_date: Date, filename: str, extension=".parquet"
@@ -187,7 +201,9 @@ class PolygonConfig:
                 for filename in sorted(filenames):
                     yield os.path.join(root, filename)
 
-    def find_first_and_last_aggs(self, aggs_dir, file_pattern) -> Tuple[str | None, str | None]:
+    def find_first_and_last_aggs(
+        self, aggs_dir, file_pattern
+    ) -> Tuple[str | None, str | None]:
         # Find the path to the lexically first and last paths in aggs_dir that matches csv_paths_pattern.
         # Would like to use Path.walk(top_down=True) but it is only availble in Python 3.12+.
         # This needs to be efficient because it is called on every init, even though we only need it for ingest.

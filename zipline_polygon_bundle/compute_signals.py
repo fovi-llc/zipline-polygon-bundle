@@ -174,7 +174,7 @@ def iterate_all_aggs_tables(
     for timestamp in schedule:
         date = timestamp.to_pydatetime().date()
         aggs_ds = pa_ds.dataset(
-            config.custom_aggs_dir,
+            config.aggs_dir,
             format="parquet",
             schema=custom_aggs_schema(tz=config.calendar.tz.key),
             partitioning=custom_aggs_partitioning(),
@@ -216,7 +216,7 @@ def file_visitor(written_file):
     print(f"{written_file.path=}")
 
 
-def compute_signals_for_all_custom_aggs(
+def compute_signals_for_all_aggs(
     from_config: PolygonConfig,
     to_config: PolygonConfig,
     valid_tickers: pa.Array,
@@ -225,7 +225,8 @@ def compute_signals_for_all_custom_aggs(
     if overwrite:
         print("WARNING: overwrite not implemented/ignored.")
 
-    print(f"{to_config.custom_aggs_dir=}")
+    # Need a different aggs_dir for the signals because schema is different.
+    print(f"{to_config.aggs_dir=}")
 
     for aggs_table in iterate_all_aggs_tables(from_config, valid_tickers):
         metadata = aggs_table.schema.metadata
@@ -251,10 +252,10 @@ def compute_signals_for_all_custom_aggs(
             pa_ds.write_dataset(
                 table,
                 filesystem=to_config.filesystem,
-                base_dir=to_config.custom_aggs_dir,
+                base_dir=to_config.aggs_dir,
                 partitioning=custom_aggs_partitioning(),
                 format="parquet",
                 existing_data_behavior="overwrite_or_ignore",
                 file_visitor=file_visitor,
             )
-    return to_config.custom_aggs_dir
+    return to_config.aggs_dir

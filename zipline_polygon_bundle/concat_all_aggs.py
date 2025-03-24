@@ -1,24 +1,40 @@
 from .config import PolygonConfig, PARTITION_COLUMN_NAME, to_partition_key
 
 import shutil
-from typing import Iterator, Tuple, List, Union
+from typing import Iterator, Tuple, Union
 
 import argparse
 import os
+import datetime
 
 import pyarrow as pa
-from pyarrow import dataset as pa_ds
-from pyarrow import csv as pa_csv
-from pyarrow import compute as pa_compute
+import pyarrow.compute as pa_compute
+import pyarrow.csv as pa_csv
+import pyarrow.dataset as pa_ds
+import pyarrow.fs as pa_fs
 
 import pandas as pd
 
 
+def get_by_ticker_dates(config: PolygonConfig) -> set[datetime.date]:
+    file_info = config.filesystem.get_file_info(config.by_ticker_dir)
+    if file_info.type == pa_fs.FileType.NotFound:
+        return set()
+    by_ticker_aggs_ds = pa_ds.dataset(config.by_ticker_aggs_arrow_dir)
+    return set(
+        [
+            pa_ds.get_partition_keys(fragment.partition_expression).get("date")
+            for fragment in by_ticker_aggs_ds.get_fragments()
+        ]
+    )
+
+
 def generate_tables_from_csv_files(
-    paths: Iterator[Union[str, os.PathLike]],
+    config: PolygonConfig,
     schema: pa.Schema,
     start_timestamp: pd.Timestamp,
     limit_timestamp: pd.Timestamp,
+    overwrite: bool = False,
 ) -> Iterator[pa.Table]:
     empty_table = schema.empty_table()
     # TODO: Find which column(s) need to be cast to int64 from the schema.
@@ -29,16 +45,30 @@ def generate_tables_from_csv_files(
     )
     csv_schema = empty_table.schema
 
+    existing_by_ticker_dates = set()
+    if not overwrite:
+        print(f"Getting existing by_ticker_dates")
+        existing_by_ticker_dates = get_by_ticker_dates(config)
+        print(f"{len(existing_by_ticker_dates)=}")
+
+    schedule = config.calendar.trading_index(
+        start=config.start_timestamp, end=config.end_timestamp, period="1D"
+    )
+
     tables_read_count = 0
     skipped_table_count = 0
-    for path in paths:
+    for timestamp in schedule:
+        date: datetime.date = timestamp.to_pydatetime().date()
+        if date in existing_by_ticker_dates:
+            continue
+        csv_path = config.date_to_aggs_file_path(date)
         convert_options = pa_csv.ConvertOptions(
             column_types=csv_schema,
             strings_can_be_null=False,
             quoted_strings_can_be_null=False,
         )
 
-        table = pa_csv.read_csv(path, convert_options=convert_options)
+        table = pa_csv.read_csv(csv_path, convert_options=convert_options)
         tables_read_count += 1
         table = table.set_column(
             table.column_names.index("window_start"),
@@ -76,12 +106,80 @@ def generate_tables_from_csv_files(
             skipped_table_count += 1
             continue
 
+        if PARTITION_COLUMN_NAME in schema.names:
+            print(f"{date=}")
         yield table
     print(f"{tables_read_count=} {skipped_table_count=}")
 
 
+# def generate_tables_from_csv_files(
+#     paths: Iterator[Union[str, os.PathLike]],
+#     schema: pa.Schema,
+#     start_timestamp: pd.Timestamp,
+#     limit_timestamp: pd.Timestamp,
+# ) -> Iterator[pa.Table]:
+#     empty_table = schema.empty_table()
+#     # TODO: Find which column(s) need to be cast to int64 from the schema.
+#     empty_table = empty_table.set_column(
+#         empty_table.column_names.index("window_start"),
+#         "window_start",
+#         empty_table.column("window_start").cast(pa.int64()),
+#     )
+#     csv_schema = empty_table.schema
+
+#     tables_read_count = 0
+#     skipped_table_count = 0
+#     for path in paths:
+#         convert_options = pa_csv.ConvertOptions(
+#             column_types=csv_schema,
+#             strings_can_be_null=False,
+#             quoted_strings_can_be_null=False,
+#         )
+
+#         table = pa_csv.read_csv(path, convert_options=convert_options)
+#         tables_read_count += 1
+#         table = table.set_column(
+#             table.column_names.index("window_start"),
+#             "window_start",
+#             table.column("window_start").cast(schema.field("window_start").type),
+#         )
+#         if PARTITION_COLUMN_NAME in schema.names:
+#             table = table.append_column(
+#                 PARTITION_COLUMN_NAME,
+#                 pa.array(
+#                     [
+#                         to_partition_key(ticker)
+#                         for ticker in table.column("ticker").to_pylist()
+#                     ]
+#                 ),
+#             )
+#         expr = (
+#             pa_compute.field("window_start")
+#             >= pa.scalar(start_timestamp, type=schema.field("window_start").type)
+#         ) & (
+#             pa_compute.field("window_start")
+#             < pa.scalar(
+#                 limit_timestamp,
+#                 type=schema.field("window_start").type,
+#             )
+#         )
+#         table = table.filter(expr)
+
+#         # TODO: Also check that these rows are within range for this file's date (not just the whole session).
+#         # And if we're doing that (figuring date for each file), we can just skip reading the file.
+#         # Might able to do a single comparison using compute.days_between.
+#         # https://arrow.apache.org/docs/python/generated/pyarrow.compute.days_between.html
+
+#         if table.num_rows == 0:
+#             skipped_table_count += 1
+#             continue
+
+#         yield table
+#     print(f"{tables_read_count=} {skipped_table_count=}")
+
+
 def generate_csv_agg_tables(
-    config: PolygonConfig,
+    config: PolygonConfig, overwrite: bool = False
 ) -> Tuple[pa.Schema, Iterator[pa.Table]]:
     """zipline does bundle ingestion one ticker at a time."""
 
@@ -121,14 +219,14 @@ def generate_csv_agg_tables(
             pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False)
         )
 
-    # TODO: Use generator like os.walk for paths.
     return (
         polygon_aggs_schema,
         generate_tables_from_csv_files(
-            paths=config.csv_paths(),
+            config,
             schema=polygon_aggs_schema,
             start_timestamp=config.start_timestamp,
             limit_timestamp=config.end_timestamp + pd.to_timedelta(1, unit="day"),
+            overwrite=overwrite,
         ),
     )
 
@@ -139,21 +237,25 @@ def generate_batches_from_tables(tables):
             yield batch
 
 
+def file_visitor(written_file):
+    print(f"{written_file.path=}")
+
+
 def concat_all_aggs_from_csv(
     config: PolygonConfig,
     overwrite: bool = False,
 ) -> str:
-    schema, tables = generate_csv_agg_tables(config)
+    schema, tables = generate_csv_agg_tables(config, overwrite=overwrite)
 
     by_ticker_aggs_arrow_dir = config.by_ticker_aggs_arrow_dir
-    if os.path.exists(by_ticker_aggs_arrow_dir):
-        if overwrite:
-            print(f"Removing {by_ticker_aggs_arrow_dir=}")
-            shutil.rmtree(by_ticker_aggs_arrow_dir)
-        else:
-            # TODO: Validate the existing data.
-            print(f"Found existing {by_ticker_aggs_arrow_dir=}")
-            return by_ticker_aggs_arrow_dir
+    # if os.path.exists(by_ticker_aggs_arrow_dir):
+    #     if overwrite:
+    #         print(f"Removing {by_ticker_aggs_arrow_dir=}")
+    #         shutil.rmtree(by_ticker_aggs_arrow_dir)
+    #     else:
+    #         # TODO: Validate the existing data.
+    #         print(f"Found existing {by_ticker_aggs_arrow_dir=}")
+    #         return by_ticker_aggs_arrow_dir
 
     partitioning = None
     if PARTITION_COLUMN_NAME in schema.names:
@@ -161,7 +263,7 @@ def concat_all_aggs_from_csv(
             pa.schema([(PARTITION_COLUMN_NAME, pa.string())]), flavor="hive"
         )
 
-    # scanner = pa_ds.Scanner.from_batches(source=generate_batches_from_tables(tables), schema=schema)
+    print(f"Scattering aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
     pa_ds.write_dataset(
         generate_batches_from_tables(tables),
         schema=schema,
@@ -169,6 +271,7 @@ def concat_all_aggs_from_csv(
         partitioning=partitioning,
         format="parquet",
         existing_data_behavior="overwrite_or_ignore",
+        file_visitor=file_visitor,
     )
     print(f"Scattered aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
     return by_ticker_aggs_arrow_dir

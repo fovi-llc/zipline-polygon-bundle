@@ -58,6 +58,9 @@ register_polygon_equities_bundle(
 ## Install the Zipline Polygon.io Bundle PyPi package and check that it works.
 Listing bundles will show if everything is working correctly.
 ```bash
+pip install -U git+https://github.com/fovi-llc/zipline-reloaded.git@calendar
+pip install -U git+https://github.com/fovi-llc/zipline-polygon-bundle.git
+
 pip install zipline_polygon_bundle
 zipline -e extension.py bundles
 ```

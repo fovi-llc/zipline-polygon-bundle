@@ -18,7 +18,6 @@ import numpy as np
 import pandas as pd
 
 
-
 def trades_schema(raw: bool = False, tz: str = "America/New York") -> pa.Schema:
     # There is some problem reading the timestamps as timestamps so we have to read as integer then change the schema.
     # Polygon Aggregate flatfile timestamps are in nanoseconds (like trades), not milliseconds as the docs say.
@@ -103,11 +102,6 @@ def cast_trades(trades, tz: str = "America/New York") -> pa.Table:
     return trades.append_column("condition_values", condition_values)
 
 
-def date_to_path(date, ext=".csv.gz"):
-    # return f"{date.year}/{date.month:02}/{date.isoformat()}{ext}"
-    return date.strftime("%Y/%m/%Y-%m-%d") + ext
-
-
 def custom_aggs_schema(raw: bool = False, tz: str = "America/New York") -> pa.Schema:
     timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz=tz)
     price_type = pa.float64()
@@ -137,12 +131,12 @@ def custom_aggs_partitioning() -> pa.Schema:
     )
 
 
-def get_custom_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
-    file_info = config.filesystem.get_file_info(config.custom_aggs_dir)
+def get_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
+    file_info = config.filesystem.get_file_info(config.aggs_dir)
     if file_info.type == pa_fs.FileType.NotFound:
         return set()
     aggs_ds = pa_ds.dataset(
-        config.custom_aggs_dir,
+        config.aggs_dir,
         format="parquet",
         schema=custom_aggs_schema(tz=config.calendar.tz.key),
         partitioning=custom_aggs_partitioning(),
@@ -159,17 +153,17 @@ def generate_csv_trades_tables(
     config: PolygonConfig, overwrite: bool = False
 ) -> Iterator[Tuple[datetime.date, pa.Table]]:
     """Generator for trades tables from flatfile CSVs."""
-    custom_aggs_dates = set()
+    existing_aggs_dates = set()
     if not overwrite:
-        custom_aggs_dates = get_custom_aggs_dates(config)
+        existing_aggs_dates = get_aggs_dates(config)
     schedule = config.calendar.trading_index(
         start=config.start_timestamp, end=config.end_timestamp, period="1D"
     )
     for timestamp in schedule:
-        date = timestamp.to_pydatetime().date()
-        if date in custom_aggs_dates:
+        date: datetime.date = timestamp.to_pydatetime().date()
+        if date in existing_aggs_dates:
             continue
-        trades_csv_path = f"{config.trades_dir}/{date_to_path(date)}"
+        trades_csv_path = config.date_to_aggs_file_path(date)
         convert_options = pa_csv.ConvertOptions(column_types=trades_schema(raw=True))
         trades = pa_csv.read_csv(trades_csv_path, convert_options=convert_options)
         trades = trades.cast(trades_schema())
@@ -339,10 +333,7 @@ def table_for_date(aggs_ds: pa_ds.Dataset, date: datetime.date) -> pa.Table:
     table = table.append_column(
         PARTITION_COLUMN_NAME,
         pa.array(
-            [
-                to_partition_key(ticker)
-                for ticker in table.column("ticker").to_pylist()
-            ]
+            [to_partition_key(ticker) for ticker in table.column("ticker").to_pylist()]
         ),
     )
     return table
@@ -352,18 +343,15 @@ def scatter_custom_aggs_to_by_ticker(
     config: PolygonConfig,
     overwrite: bool = False,
 ) -> str:
-    file_info = config.filesystem.get_file_info(config.custom_aggs_dir)
+    file_info = config.filesystem.get_file_info(config.aggs_dir)
     if file_info.type == pa_fs.FileType.NotFound:
-        raise FileNotFoundError(f"{config.custom_aggs_dir=} not found.")
+        raise FileNotFoundError(f"{config.aggs_dir=} not found.")
 
     by_ticker_aggs_arrow_dir = config.by_ticker_aggs_arrow_dir
     if os.path.exists(by_ticker_aggs_arrow_dir):
         if overwrite:
             print(f"Removing {by_ticker_aggs_arrow_dir=}")
             shutil.rmtree(by_ticker_aggs_arrow_dir)
-        else:
-            print(f"Found existing {by_ticker_aggs_arrow_dir=}")
-            return by_ticker_aggs_arrow_dir
 
     schedule = config.calendar.trading_index(
         start=config.start_timestamp, end=config.end_timestamp, period="1D"
@@ -372,7 +360,7 @@ def scatter_custom_aggs_to_by_ticker(
 
     print(f"Scattering custom aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
     aggs_ds = pa_ds.dataset(
-        config.custom_aggs_dir,
+        config.aggs_dir,
         format="parquet",
         schema=custom_aggs_schema(tz=config.calendar.tz.key),
         partitioning=custom_aggs_partitioning(),

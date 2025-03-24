@@ -621,9 +621,10 @@ def register_polygon_equities_bundle(
 ):
     register_nyse_all_hours_calendar()
 
-    if agg_time not in ["day", "minute", "1min"]:
+    # Note that "minute" is the Polygon minute aggs and "1minute" is the trades.
+    if agg_time not in ["day", "minute", "1min", "1minute"]:
         raise ValueError(
-            f"agg_time must be 'day', 'minute' (aggs), or '1min' (trades), not '{agg_time}'"
+            f"agg_time must be 'day', 'minute' (aggs), or '1minute' (trades), not '{agg_time}'"
         )
 
     # We need to know the start and end dates of the session before the bundle is
@@ -649,7 +650,7 @@ def register_polygon_equities_bundle(
 
     start_session = parse_date(start_date, raise_oob=False) if start_date else None
     end_session = parse_date(end_date, raise_oob=False) if end_date else None
-    print(f"{bundlename=} {agg_time=} {start_session=} {end_session=}")
+    # print(f"Registered {bundlename=} {agg_time=} {start_session=} {end_session=}")
 
     register(
         bundlename,
