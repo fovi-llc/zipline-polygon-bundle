@@ -189,7 +189,8 @@ def trades_to_custom_aggs(
     table: pa.Table,
     include_trf: bool = False,
 ) -> pa.Table:
-    print(f"{datetime.datetime.now()=} {date=} {pa.default_memory_pool()=}")
+    print(f"{date=} {pa.default_memory_pool()=}")
+    # print(f"{datetime.datetime.now()=} {date=} {pa.default_memory_pool()=}")
     # print(f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss=}")
     table = table.filter(pa_compute.greater(table["size"], 0))
     table = table.filter(pa_compute.equal(table["correction"], "0"))
