@@ -61,7 +61,7 @@ def generate_tables_from_csv_files(
         date: datetime.date = timestamp.to_pydatetime().date()
         if date in existing_by_ticker_dates:
             continue
-        csv_path = config.date_to_aggs_file_path(date)
+        csv_path = config.date_to_csv_file_path(date)
         convert_options = pa_csv.ConvertOptions(
             column_types=csv_schema,
             strings_can_be_null=False,
@@ -237,10 +237,6 @@ def generate_batches_from_tables(tables):
             yield batch
 
 
-def file_visitor(written_file):
-    print(f"{written_file.path=}")
-
-
 def concat_all_aggs_from_csv(
     config: PolygonConfig,
     overwrite: bool = False,
@@ -271,7 +267,6 @@ def concat_all_aggs_from_csv(
         partitioning=partitioning,
         format="parquet",
         existing_data_behavior="overwrite_or_ignore",
-        file_visitor=file_visitor,
     )
     print(f"Scattered aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
     return by_ticker_aggs_arrow_dir

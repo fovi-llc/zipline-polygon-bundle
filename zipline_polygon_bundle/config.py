@@ -110,6 +110,7 @@ class PolygonConfig:
         # If agg_time begins with a digit, it is a timedelta string and we're using custom aggs from trades.
         if bool(re.match(r"^\d", agg_time)):
             self.agg_timedelta = pd.to_timedelta(agg_time)
+            self.csv_files_dir = self.trades_dir
             self.custom_aggs_name_format = environ.get(
                 "CUSTOM_AGGS_NAME_FORMAT", "{config.agg_timedelta.seconds}sec_aggs"
             )
@@ -124,10 +125,12 @@ class PolygonConfig:
         elif agg_time == "minute":
             self.agg_timedelta = pd.to_timedelta("1minute")
             self.aggs_dir = self.minute_aggs_dir
+            self.csv_files_dir = self.aggs_dir
             self.by_ticker_dir = self.minute_by_ticker_dir
         elif agg_time == "day":
             self.agg_timedelta = pd.to_timedelta("1day")
             self.aggs_dir = self.day_aggs_dir
+            self.csv_files_dir = self.aggs_dir
             self.by_ticker_dir = self.day_by_ticker_dir
         else:
             raise ValueError(
@@ -165,8 +168,8 @@ class PolygonConfig:
         # TODO: Use csv_paths_pattern to remove the suffixes
         return os.path.basename(path).removesuffix(".gz").removesuffix(".csv")
 
-    def date_to_aggs_file_path(self, date: datetime.date, ext=".csv.gz"):
-        return f"{self.aggs_dir}/{date.strftime('%Y/%m/%Y-%m-%d') + ext}"
+    def date_to_csv_file_path(self, date: datetime.date, ext=".csv.gz"):
+        return f"{self.csv_files_dir}/{date.strftime('%Y/%m/%Y-%m-%d') + ext}"
 
     @property
     def by_ticker_aggs_arrow_dir(self):

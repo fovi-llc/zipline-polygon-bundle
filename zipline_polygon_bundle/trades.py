@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 
-def trades_schema(raw: bool = False, tz: str = "America/New York") -> pa.Schema:
+def trades_schema(raw: bool = False, tz: str = "America/New_York") -> pa.Schema:
     # There is some problem reading the timestamps as timestamps so we have to read as integer then change the schema.
     # Polygon Aggregate flatfile timestamps are in nanoseconds (like trades), not milliseconds as the docs say.
     # I make the timestamp timezone-aware because that's how Unix timestamps work and it may help avoid mistakes.
@@ -94,7 +94,7 @@ def cast_strings_to_list(
     return int_list_array
 
 
-def cast_trades(trades, tz: str = "America/New York") -> pa.Table:
+def cast_trades(trades, tz: str = "America/New_York") -> pa.Table:
     trades = trades.cast(trades_schema(tz=tz))
     condition_values = cast_strings_to_list(
         trades.column("conditions").combine_chunks()
@@ -102,7 +102,7 @@ def cast_trades(trades, tz: str = "America/New York") -> pa.Table:
     return trades.append_column("condition_values", condition_values)
 
 
-def custom_aggs_schema(raw: bool = False, tz: str = "America/New York") -> pa.Schema:
+def custom_aggs_schema(raw: bool = False, tz: str = "America/New_York") -> pa.Schema:
     timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz=tz)
     price_type = pa.float64()
     return pa.schema(
@@ -163,7 +163,7 @@ def generate_csv_trades_tables(
         date: datetime.date = timestamp.to_pydatetime().date()
         if date in existing_aggs_dates:
             continue
-        trades_csv_path = config.date_to_aggs_file_path(date)
+        trades_csv_path = config.date_to_csv_file_path(date)
         convert_options = pa_csv.ConvertOptions(column_types=trades_schema(raw=True))
         trades = pa_csv.read_csv(trades_csv_path, convert_options=convert_options)
         trades = trades.cast(trades_schema())
