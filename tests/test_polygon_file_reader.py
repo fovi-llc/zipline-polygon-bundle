@@ -2,7 +2,7 @@ import glob
 import os
 import unittest
 import pandas as pd
-from polygon_file_reader import convert_timestamp
+from zipline_polygon_bundle.polygon_file_reader import convert_timestamp
 
 
 class TestPolygonFileReader(unittest.TestCase):
