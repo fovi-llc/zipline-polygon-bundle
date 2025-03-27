@@ -33,6 +33,7 @@ classifiers = [
 
 [tool.poetry.dependencies]
 fsspec = ">=2024.10"
+filelock = ">=3.16.0"
 python = ">=3.9,<4.0"
 polygon-api-client = ">=1.14.2"
 pandas = ">=2.2,<3"
@@ -46,14 +47,14 @@ bcolz-zipline = ">=1.2.11"
 pyarrow = ">=18.1.0,<19"
 numpy = "<2"
 toolz = ">=0.8.2"
-zipline-reloaded = ">=3.1"
+zipline-reloaded = { git = "https://github.com/fovi-llc/zipline-reloaded.git" }
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
 
 [build-system]
 build-backend = "poetry.core.masonry.api"
-requires = ["poetry_core>=1.0.0"]
+requires = ["poetry_core>=2.1.0"]
 
 [tool.pytest.ini_options]
 # https://docs.pytest.org/en/stable/how-to/capture-warnings.html#controlling-warnings
