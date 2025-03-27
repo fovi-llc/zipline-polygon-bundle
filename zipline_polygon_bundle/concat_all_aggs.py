@@ -16,24 +16,27 @@ import pyarrow.fs as pa_fs
 import pandas as pd
 
 
-def get_by_ticker_dates(config: PolygonConfig) -> set[datetime.date]:
-    file_info = config.filesystem.get_file_info(config.by_ticker_dir)
-    if file_info.type == pa_fs.FileType.NotFound:
-        return set()
-    by_ticker_aggs_ds = pa_ds.dataset(config.by_ticker_aggs_arrow_dir)
-    return set(
-        [
-            pa_ds.get_partition_keys(fragment.partition_expression).get("date")
-            for fragment in by_ticker_aggs_ds.get_fragments()
-        ]
-    )
+# def get_by_ticker_dates(config: PolygonConfig, schema) -> set[datetime.date]:
+#     file_info = config.filesystem.get_file_info(config.by_ticker_dir)
+#     if file_info.type == pa_fs.FileType.NotFound:
+#         return set()
+#     partitioning = None
+#     if PARTITION_COLUMN_NAME in schema.names:
+#         partitioning = pa_ds.partitioning(
+#             pa.schema([(PARTITION_COLUMN_NAME, pa.string())]), flavor="hive"
+#         )
+#     by_ticker_aggs_ds = pa_ds.dataset(config.by_ticker_aggs_arrow_dir, schema=schema, partitioning=partitioning)
+#     return set(
+#         [
+#             pa_ds.get_partition_keys(fragment.partition_expression).get("date")
+#             for fragment in by_ticker_aggs_ds.get_fragments()
+#         ]
+#     )
 
 
 def generate_tables_from_csv_files(
     config: PolygonConfig,
     schema: pa.Schema,
-    start_timestamp: pd.Timestamp,
-    limit_timestamp: pd.Timestamp,
     overwrite: bool = False,
 ) -> Iterator[pa.Table]:
     empty_table = schema.empty_table()
@@ -47,18 +50,23 @@ def generate_tables_from_csv_files(
 
     existing_by_ticker_dates = set()
     if not overwrite:
-        print(f"Getting existing by_ticker_dates")
-        existing_by_ticker_dates = get_by_ticker_dates(config)
+        # print("Getting existing by_ticker_dates")
+        # existing_by_ticker_dates = get_by_ticker_dates(config, schema)
         print(f"{len(existing_by_ticker_dates)=}")
 
     schedule = config.calendar.trading_index(
         start=config.start_timestamp, end=config.end_timestamp, period="1D"
     )
+    start_timestamp = config.start_timestamp.tz_localize(config.calendar.tz.key)
+    limit_timestamp = (config.end_timestamp + pd.Timedelta(days=1)).tz_localize(
+        config.calendar.tz.key)
+    # print(f"{start_timestamp=} {limit_timestamp=} {config.calendar.tz=} {schedule[:2]=} {schedule[-2:]=}")
 
     tables_read_count = 0
     skipped_table_count = 0
     for timestamp in schedule:
-        date: datetime.date = timestamp.to_pydatetime().date()
+        date: datetime.date = timestamp.tz_localize(config.calendar.tz.key).to_pydatetime().date()
+        # print(f"{date=} {timestamp=}")
         if date in existing_by_ticker_dates:
             continue
         csv_path = config.date_to_csv_file_path(date)
@@ -185,7 +193,7 @@ def generate_csv_agg_tables(
 
     # Polygon Aggregate flatfile timestamps are in nanoseconds (like trades), not milliseconds as the docs say.
     # I make the timestamp timezone-aware because that's how Unix timestamps work and it may help avoid mistakes.
-    timestamp_type = pa.timestamp("ns", tz=config.calendar.tz.key)
+    timestamp_type = pa.timestamp("ns", tz='UTC')
 
     # But we can't use the timestamp type in the schema here because it's not supported by the CSV reader.
     # So we'll use int64 and cast it after reading the CSV file.
@@ -224,8 +232,6 @@ def generate_csv_agg_tables(
         generate_tables_from_csv_files(
             config,
             schema=polygon_aggs_schema,
-            start_timestamp=config.start_timestamp,
-            limit_timestamp=config.end_timestamp + pd.to_timedelta(1, unit="day"),
             overwrite=overwrite,
         ),
     )

@@ -1,5 +1,5 @@
 from exchange_calendars.calendar_helpers import Date, parse_date
-from exchange_calendars.calendar_utils import get_calendar
+from zipline.utils.calendar_utils import get_calendar
 
 from .nyse_all_hours_calendar import NYSE_ALL_HOURS
 
@@ -44,6 +44,7 @@ class PolygonConfig:
         self.calendar_name = calendar_name
         self.start_date = start_date
         self.end_date = end_date
+        # TODO: We can't use PolygonConfig.calendar because it gets these properties for start/end session.
         self.start_timestamp = (
             parse_date(start_date, calendar=self.calendar)
             if start_date
@@ -147,13 +148,10 @@ class PolygonConfig:
 
     @property
     def calendar(self):
-        # If you don't give a start date you'll only get 20 years from today.
-        # "right" side means the end date is included.
-        if self.calendar_name in [NYSE_ALL_HOURS, "us_futures", "CMES", "XNYS", "NYSE"]:
-            return get_calendar(
-                self.calendar_name, side="right", start=pd.Timestamp("1990-01-01")
-            )
-        return get_calendar(self.calendar_name, side="right")
+        # print call stack
+        # import traceback
+        # traceback.print_stack()
+        return get_calendar(self.calendar_name, start_session=self.start_date, end_session=self.end_date)
 
     def ticker_file_path(self, date: pd.Timestamp):
         ticker_year_dir = os.path.join(
@@ -186,12 +184,12 @@ class PolygonConfig:
         return self.by_ticker_dir
 
     def api_cache_path(
-        self, start_date: Date, end_date: Date, filename: str, extension=".parquet"
+        self, first_day: pd.Timestamp, last_day: pd.Timestamp, filename: str, extension=".parquet"
     ):
-        start_str = parse_date(start_date, calendar=self.calendar).date().isoformat()
-        end_str = parse_date(end_date, calendar=self.calendar).date().isoformat()
+        first_day_str = first_day.date().isoformat()
+        last_day_str = last_day.date().isoformat()
         return os.path.join(
-            self.cache_dir, f"{start_str}_{end_str}/{filename}{extension}"
+            self.cache_dir, f"{first_day_str}_{last_day_str}/{filename}{extension}"
         )
 
     def csv_paths(self) -> Iterator[str]:

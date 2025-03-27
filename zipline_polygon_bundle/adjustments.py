@@ -10,19 +10,19 @@ from urllib3 import HTTPResponse
 
 
 def load_polygon_splits(
-    config: PolygonConfig, first_start_end: datetime.date, last_end_date: datetime.date
+    config: PolygonConfig, first_day: pd.Timestamp, last_day: pd.Timestamp
 ) -> pd.DataFrame:
     # N.B. If the schema changes then the filename should change.  We're on v3 now.
     splits_path = config.api_cache_path(
-        start_date=first_start_end, end_date=last_end_date, filename="list_splits"
+        first_day=first_day, last_day=last_day, filename="list_splits"
     )
-    expected_split_count = (last_end_date - first_start_end).days * 3
+    expected_split_count = (last_day - first_day).days * 3
     if not os.path.exists(splits_path):
         client = polygon.RESTClient(api_key=config.api_key)
         splits = client.list_splits(
             limit=1000,
-            execution_date_gte=first_start_end,
-            execution_date_lt=last_end_date + datetime.timedelta(days=1),
+            execution_date_gte=first_day.date(),
+            execution_date_lt=last_day.date() + datetime.timedelta(days=1),
         )
         if splits is HTTPResponse:
             raise ValueError(f"Polygon.list_splits bad HTTPResponse: {splits}")
@@ -32,7 +32,7 @@ def load_polygon_splits(
         splits.to_parquet(splits_path)
         if len(splits) < expected_split_count:
             logging.warning(
-                f"Only got {len(splits)=} from Polygon list_splits (expected {expected_split_count=}).  "
+                f"Only got {len(splits)=} from Polygon list_splits ({expected_split_count=}).  "
                 "This is probably fine if your historical range is short."
             )
         # We will always load from the file to avoid any chance of weird errors.
@@ -41,7 +41,7 @@ def load_polygon_splits(
         print(f"Loaded {len(splits)=} from {splits_path}")
         if len(splits) < expected_split_count:
             logging.warning(
-                f"Only got {len(splits)=} from Polygon list_splits (expected {expected_split_count=}).  "
+                f"Only got {len(splits)=} from Polygon list_splits ({expected_split_count=}).  "
                 "This is probably fine if your historical range is short."
             )
         return splits
@@ -50,11 +50,11 @@ def load_polygon_splits(
 
 def load_splits(
     config: PolygonConfig,
-    first_start_end: datetime.date,
-    last_end_date: datetime.date,
+    first_day: pd.Timestamp,
+    last_day: pd.Timestamp,
     ticker_to_sid: dict[str, int],
 ) -> pd.DataFrame:
-    splits = load_polygon_splits(config, first_start_end, last_end_date)
+    splits = load_polygon_splits(config, first_day=first_day, last_day=last_day)
     splits["sid"] = splits["ticker"].apply(lambda t: ticker_to_sid.get(t, pd.NA))
     splits.dropna(inplace=True)
     splits["sid"] = splits["sid"].astype("int64")
@@ -70,18 +70,18 @@ def load_splits(
 
 
 def load_polygon_dividends(
-    config: PolygonConfig, first_start_date: datetime.date, last_end_date: datetime.date
+    config: PolygonConfig, first_day: pd.Timestamp, last_day: pd.Timestamp
 ) -> pd.DataFrame:
     # N.B. If the schema changes then the filename should change.  We're on v3 now.
     dividends_path = config.api_cache_path(
-        start_date=first_start_date, end_date=last_end_date, filename="list_dividends"
+        first_day=first_day, last_day=last_day, filename="list_dividends"
     )
     if not os.path.exists(dividends_path):
         client = polygon.RESTClient(api_key=config.api_key)
         dividends = client.list_dividends(
             limit=1000,
-            record_date_gte=first_start_date,
-            pay_date_lt=last_end_date + datetime.timedelta(days=1),
+            record_date_gte=first_day.date(),
+            pay_date_lt=last_day.date() + datetime.timedelta(days=1),
         )
         if dividends is HTTPResponse:
             raise ValueError(f"Polygon.list_dividends bad HTTPResponse: {dividends}")
@@ -104,35 +104,30 @@ def load_polygon_dividends(
 
 
 def load_chunked_polygon_dividends(
-    config: PolygonConfig, first_start_end: datetime.date, last_end_date: datetime.date
+    config: PolygonConfig, first_day: pd.Timestamp,
+    last_day: pd.Timestamp
 ) -> pd.DataFrame:
     dividends_list = []
-    next_start_end = first_start_end
-    while next_start_end < last_end_date:
+    next_start_end = first_day
+    while next_start_end < last_day:
         # We want at most a month of dividends at a time.  They should end on the last day of the month.
-        # So the next_end_date is the day before the first day of the next month.
-        first_of_next_month = datetime.date(
-            next_start_end.year + (next_start_end.month // 12),
-            (next_start_end.month % 12) + 1,
-            1,
-        )
-        next_end_date = first_of_next_month - datetime.timedelta(days=1)
-        if next_end_date > last_end_date:
-            next_end_date = last_end_date
+        next_end_date = next_start_end + pd.offsets.MonthEnd()
+        if next_end_date > last_day:
+            next_end_date = last_day
         dividends_list.append(
-            load_polygon_dividends(config, next_start_end, next_end_date)
+            load_polygon_dividends(config, first_day=next_start_end, last_day=next_end_date)
         )
-        next_start_end = next_end_date + datetime.timedelta(days=1)
+        next_start_end = next_end_date + pd.Timedelta(days=1)
     return pd.concat(dividends_list)
 
 
 def load_dividends(
     config: PolygonConfig,
-    first_start_end: datetime.date,
-    last_end_date: datetime.date,
+    first_day: pd.Timestamp,
+    last_day: pd.Timestamp,
     ticker_to_sid: dict[str, int],
 ) -> pd.DataFrame:
-    dividends = load_chunked_polygon_dividends(config, first_start_end, last_end_date)
+    dividends = load_chunked_polygon_dividends(config, first_day=first_day, last_day=last_day)
     dividends["sid"] = dividends["ticker"].apply(lambda t: ticker_to_sid.get(t, pd.NA))
     dividends.dropna(how="any", inplace=True)
     dividends["sid"] = dividends["sid"].astype("int64")
@@ -159,7 +154,7 @@ def load_conditions(config: PolygonConfig) -> pd.DataFrame:
     # The API doesn't use dates for the condition codes but this is a way to provide control over caching.
     # Main thing is to get the current conditions list but we don't want to call more than once a day.
     conditions_path = config.api_cache_path(
-        start_date=config.start_timestamp.date(), end_date=config.end_timestamp.date(), filename="conditions"
+        first_day=config.start_timestamp, last_day=config.end_timestamp, filename="conditions"
     )
     expected_conditions_count = 100
     if not os.path.exists(conditions_path):

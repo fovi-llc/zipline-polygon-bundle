@@ -56,31 +56,31 @@ def generate_all_agg_tables_from_csv(
 #     return df
 
 
-def aggregate_multiple_aggs_per_date(df: pd.DataFrame) -> pd.DataFrame:
-    duplicated_index = df.index.duplicated(keep=False)
-    if not duplicated_index.any():
-        return df
-    duplicates = df[duplicated_index]
-    duplicate_index_values = duplicates.index.values
-    print()
-    if duplicates["symbol"].nunique() != 1:
-        logging.error(f"{duplicates['symbol'].unique()=} {duplicate_index_values=}")
-    logging.warning(
-        f"Aggregating dupes df[df.index.duplicated(keep=False)]=\n{duplicates}"
-    )
-    df = df.groupby(df.index).agg(
-        {
-            "symbol": "first",
-            "volume": "sum",
-            "open": "first",
-            "close": "last",
-            "high": "max",
-            "low": "min",
-            "transactions": "sum",
-        }
-    )
-    print(f"WARNING: Aggregated dupes df=\n{df[df.index.isin(duplicate_index_values)]}")
-    return df
+# def aggregate_multiple_aggs_per_date(df: pd.DataFrame) -> pd.DataFrame:
+#     duplicated_index = df.index.duplicated(keep=False)
+#     if not duplicated_index.any():
+#         return df
+#     duplicates = df[duplicated_index]
+#     duplicate_index_values = duplicates.index.values
+#     print()
+#     if duplicates["symbol"].nunique() != 1:
+#         logging.error(f"{duplicates['symbol'].unique()=} {duplicate_index_values=}")
+#     logging.warning(
+#         f"Aggregating dupes df[df.index.duplicated(keep=False)]=\n{duplicates}"
+#     )
+#     df = df.groupby(df.index).agg(
+#         {
+#             "symbol": "first",
+#             "volume": "sum",
+#             "open": "first",
+#             "close": "last",
+#             "high": "max",
+#             "low": "min",
+#             "transactions": "sum",
+#         }
+#     )
+#     print(f"WARNING: Aggregated dupes df=\n{df[df.index.isin(duplicate_index_values)]}")
+#     return df
 
 
 def process_day_aggregates(
@@ -89,7 +89,7 @@ def process_day_aggregates(
     metadata,
     calendar,
     symbol_to_sid: dict[str, int],
-    dates_with_data: set,
+    dates_with_data: set[pd.Timestamp],
 ):
     for symbol, sid in symbol_to_sid.items():
         df = table.filter(
@@ -108,14 +108,15 @@ def process_day_aggregates(
         # Take days as per calendar
         df = df[df.index.isin(sessions)]
         # 2019-08-13 has a bunch of tickers with multiple day aggs per date
-        df = aggregate_multiple_aggs_per_date(df)
+        # TODO: Actually they're for different days so if the filtering doesn't work then do something about it.
+        # df = aggregate_multiple_aggs_per_date(df)
         if len(df) < 1:
             continue
         # Check first and last date.
-        start_date = df.index[0]
-        dates_with_data.add(start_date.date())
-        end_date = df.index[-1]
-        dates_with_data.add(end_date.date())
+        start_date = df.index[0].tz_convert(calendar.tz.key).normalize()
+        dates_with_data.add(start_date)
+        end_date = df.index[-1].tz_convert(calendar.tz.key).normalize()
+        dates_with_data.add(end_date)
         try:
             duplicated_index = df.index.duplicated(keep=False)
             df_with_duplicates = df[duplicated_index]
@@ -264,7 +265,7 @@ def process_minute_fragment(
     metadata,
     calendar,
     symbol_to_sid: dict[str, int],
-    dates_with_data: set,
+    dates_with_data: set[pd.Timestamp],
     agg_time: str,
 ):
     # Only get the columns Zipline allows.
@@ -280,11 +281,14 @@ def process_minute_fragment(
             "transactions",
         ]
     )
-    # print(f" {table.num_rows=}")
+    # print(f"fragment {table.num_rows=}")
     table = rename_polygon_to_zipline(table, "timestamp")
     table = table.sort_by([("symbol", "ascending"), ("timestamp", "ascending")])
+    # print(f"{minutes[:5]=}\n{minutes[-5:]=}")
     table = table.filter(pyarrow.compute.field("timestamp").isin(minutes))
+    # print(f"filtered {table.num_rows=}")
     table_df = table.to_pandas()
+    # print(f"{table_df.head()=}")
     for symbol, df in table_df.groupby("symbol"):
         # print(f"\n{symbol=} {len(df)=} {df['timestamp'].min()} {df['timestamp'].max()}")
         if symbol not in symbol_to_sid:
@@ -294,31 +298,37 @@ def process_minute_fragment(
         sql_symbol = symbol_to_upper(symbol)
         df["symbol"] = sql_symbol
         df = df.set_index("timestamp")
+        # Shouldn't need to do this because the table is sorted.
+        if not df.index.is_monotonic_increasing:
+            print(f" INFO: {symbol=} {sid=} not monotonic increasing")
+            df.sort_index(inplace=True)
         # Convert from calendar tz (America/New_York) to UTC for Zipline.
-        df.index = df.index.tz_convert("UTC")
+        # df.index = df.index.tz_convert(calendar.tz)
         if agg_time == "day":
             df.drop(columns=["symbol", "transactions"], inplace=True)
             # Check first and last date.
-            start_date = df.index[0].date()
-            start_timestamp = df.index[0]
+            start_date = df.index[0].tz_convert(calendar.tz.key).normalize()
             dates_with_data.add(start_date)
-            end_date = df.index[-1].date()
-            end_timestamp = df.index[-1]
+            end_date = df.index[-1].tz_convert(calendar.tz.key).normalize()
             dates_with_data.add(end_date)
             df = df[df.index.isin(minutes)]
             len_before = len(df)
+            # print(f"{start_date=} {end_date=} {dates_with_data=}")
+            # print(f"day pre {df.head()=}")
             if len(df) < 1:
                 # TODO: Move sid assignment until after this check for no data.
                 print(
-                    f" WARNING: No data for {symbol=} {sid=} {len_before=} {start_timestamp=} {end_timestamp=}"
+                    f" WARNING: No data for {symbol=} {sid=} {len_before=} {start_date=} {end_date=}"
                 )
                 continue
             df = minute_frame_to_session_frame(df, calendar)
-            df["symbol"] = sql_symbol
+            # print(f"day sess {df.head()=}")
+            # df["symbol"] = sql_symbol
             df = df[df.index.isin(sessions)]
 
             # The auto_close date is the day after the last trade.
-            auto_close_date = end_date + pd.Timedelta(days=1)
+            # auto_close_date = end_date + pd.Timedelta(days=1)
+            auto_close_date = None
 
             # If metadata already has this sid, just extend the end_date and ac_date.
             if sid in metadata.index:
@@ -338,7 +348,7 @@ def process_minute_fragment(
                     start_date,
                     end_date,
                     auto_close_date,
-                    symbol_to_upper(symbol),
+                    sql_symbol,
                     calendar.name,
                     symbol,
                 )
@@ -351,13 +361,14 @@ def process_minute_fragment(
             # TODO: These fills should have the same price for OHLC (open for backfill, close for forward fill)
             df.ffill(inplace=True)
             # Back fill missing data (maybe necessary for before the first day bar)
+            # TODO: Don't want to backfill future values.  What's better here?
             df.bfill(inplace=True)
             if len(df) > 0:
                 # print(f"\n{symbol=} {sid=} {len_before=} {start_timestamp=} {end_date=} {end_timestamp=} {len(df)=}")
                 yield sid, df
             else:
                 print(
-                    f" WARNING: No day bars for {symbol=} {sid=} {len_before=} {start_date=} {start_timestamp=} {end_date=} {end_timestamp=}"
+                    f" WARNING: No day bars for {symbol=} {sid=} {len_before=} {start_date=} {start_date=} {end_date=} {end_date=}"
                 )
         else:
             len_before = len(df)
@@ -386,7 +397,7 @@ def process_minute_aggregates(
     metadata,
     calendar,
     symbol_to_sid: dict[str, int],
-    dates_with_data: set,
+    dates_with_data: set[pd.Timestamp],
     agg_time: str,
 ):
     # We want to do this by Hive partition at a time because each ticker will be complete.
@@ -443,6 +454,12 @@ def polygon_equities_bundle_minute(
         end_date=end_date,
         agg_time="minute",
     )
+
+    print(f"{calendar.name=} {start_date=} {end_date=}")
+    print(f"{calendar.sessions_in_range(start_date, end_date)[:4]}")
+    print(f"{calendar.sessions_in_range(start_date, end_date)[-4:]}")
+    print(f"{calendar.sessions_minutes(start_date, end_date)[:4]}")
+    print(f"{calendar.sessions_minutes(start_date, end_date)[-4:]}")
 
     by_ticker_aggs_arrow_dir = concat_all_aggs_from_csv(config)
     aggregates = pyarrow.dataset.dataset(by_ticker_aggs_arrow_dir)
@@ -535,9 +552,11 @@ def polygon_equities_bundle_trades(
         agg_time="1min",
     )
 
-    # print(f"{calendar.name=} {start_date=} {end_date=}")
-    # print(f"{calendar.sessions_in_range(start_date, end_date)[-4:]}")
-    # print(f"{calendar.sessions_minutes(start_date, end_date)[-4:]}")
+    print(f"{calendar.name=} {start_date=} {end_date=}")
+    print(f"{calendar.sessions_in_range(start_date, end_date)[:4]=}")
+    print(f"{calendar.sessions_in_range(start_date, end_date)[-4:]=}")
+    print(f"{calendar.sessions_minutes(start_date, end_date)[:4]=}")
+    print(f"{calendar.sessions_minutes(start_date, end_date)[-4:]=}")
 
     convert_trades_to_custom_aggs(config, overwrite=False)
     by_ticker_aggs_arrow_dir = scatter_custom_aggs_to_by_ticker(config)
@@ -580,6 +599,10 @@ def polygon_equities_bundle_trades(
         show_progress=show_progress,
     )
 
+    print(f"{len(dates_with_data)=}")
+    print(f"{dates_with_data=}")
+    dates_with_data_day = dates_with_data.copy()
+
     # Get data for all stocks and write to Zipline
     minute_bar_writer.write(
         process_minute_aggregates(
@@ -595,14 +618,17 @@ def polygon_equities_bundle_trades(
         show_progress=show_progress,
     )
 
+    print(f"{len(dates_with_data)=}")
+    print(f"{dates_with_data-dates_with_data_day=}")
+
     # Write the metadata
     asset_db_writer.write(equities=metadata)
 
     # Load splits and dividends
-    first_start_end = min(dates_with_data)
-    last_end_date = max(dates_with_data)
-    splits = load_splits(config, first_start_end, last_end_date, symbol_to_sid)
-    dividends = load_dividends(config, first_start_end, last_end_date, symbol_to_sid)
+    first_day = min(dates_with_data)
+    last_day = max(dates_with_data)
+    splits = load_splits(config, first_day=first_day, last_day=last_day, ticker_to_sid=symbol_to_sid)
+    dividends = load_dividends(config, first_day=first_day, last_day=last_day, ticker_to_sid=symbol_to_sid)
 
     # Write splits and dividends
     adjustment_writer.write(splits=splits, dividends=dividends)
@@ -620,6 +646,9 @@ def register_polygon_equities_bundle(
     # include_asset_types=None,
 ):
     register_nyse_all_hours_calendar()
+
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', 500)
 
     # Note that "minute" is the Polygon minute aggs and "1minute" is the trades.
     if agg_time not in ["day", "minute", "1min", "1minute"]:

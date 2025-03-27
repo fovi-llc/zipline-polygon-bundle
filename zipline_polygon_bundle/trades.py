@@ -18,13 +18,14 @@ import numpy as np
 import pandas as pd
 
 
-def trades_schema(raw: bool = False, tz: str = "America/New_York") -> pa.Schema:
+def trades_schema(raw: bool = False) -> pa.Schema:
     # There is some problem reading the timestamps as timestamps so we have to read as integer then change the schema.
     # Polygon Aggregate flatfile timestamps are in nanoseconds (like trades), not milliseconds as the docs say.
     # I make the timestamp timezone-aware because that's how Unix timestamps work and it may help avoid mistakes.
     # The timezone is America/New_York because that's the US exchanges timezone and the date is a trading day.
     # timestamp_type = pa.timestamp("ns", tz="America/New_York")
-    timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz=tz)
+    # timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz=tz)
+    timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz="UTC")
 
     # Polygon price scale is 4 decimal places (i.e. hundredths of a penny), but we'll use 10 because we have precision to spare.
     # price_type = pa.decimal128(precision=38, scale=10)
@@ -67,7 +68,7 @@ def trades_dataset(config: PolygonConfig) -> pa_ds.Dataset:
     return pa_ds.FileSystemDataset.from_paths(
         paths,
         format=pa_ds.CsvFileFormat(),
-        schema=trades_schema(raw=True, tz=config.calendar.tz.key),
+        schema=trades_schema(raw=True),
         filesystem=config.filesystem,
     )
 
@@ -94,16 +95,17 @@ def cast_strings_to_list(
     return int_list_array
 
 
-def cast_trades(trades, tz: str = "America/New_York") -> pa.Table:
-    trades = trades.cast(trades_schema(tz=tz))
+def cast_trades(trades) -> pa.Table:
+    trades = trades.cast(trades_schema())
     condition_values = cast_strings_to_list(
         trades.column("conditions").combine_chunks()
     )
     return trades.append_column("condition_values", condition_values)
 
 
-def custom_aggs_schema(raw: bool = False, tz: str = "America/New_York") -> pa.Schema:
-    timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz=tz)
+def custom_aggs_schema(raw: bool = False) -> pa.Schema:
+    # timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz=tz)
+    timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz="UTC")
     price_type = pa.float64()
     return pa.schema(
         [
@@ -138,7 +140,7 @@ def get_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
     aggs_ds = pa_ds.dataset(
         config.aggs_dir,
         format="parquet",
-        schema=custom_aggs_schema(tz=config.calendar.tz.key),
+        schema=custom_aggs_schema(),
         partitioning=custom_aggs_partitioning(),
     )
     return set(
@@ -241,6 +243,7 @@ def trades_to_custom_aggs(
         "month", pa.array(np.full(len(table), date.month), type=pa.uint8())
     )
     table = table.sort_by([("window_start", "ascending"), ("ticker", "ascending")])
+    # print(f"aggs {date=} {table.to_pandas().head()=}")
     return table
 
 
@@ -319,13 +322,13 @@ def convert_trades_to_custom_aggs(
 #     return mfi
 
 
-def table_for_date(aggs_ds: pa_ds.Dataset, date: datetime.date) -> pa.Table:
+def table_for_date(aggs_ds: pa_ds.Dataset, date: pd.Timestamp) -> pa.Table:
     date_filter_expr = (
         (pa_compute.field("year") == date.year)
         & (pa_compute.field("month") == date.month)
-        & (pa_compute.field("date") == date)
+        & (pa_compute.field("date") == date.date())
     )
-    print(f"{date=}")
+    print(f"table for {date=}")
     table = aggs_ds.to_table(filter=date_filter_expr)
     # TODO: Check that these rows are within range for this file's date (not just the whole session).
     # And if we're doing that (figuring date for each file), we can just skip reading the file.
@@ -338,6 +341,32 @@ def table_for_date(aggs_ds: pa_ds.Dataset, date: datetime.date) -> pa.Table:
         ),
     )
     return table
+
+
+def get_by_ticker_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
+    file_info = config.filesystem.get_file_info(config.by_ticker_aggs_arrow_dir)
+    if file_info.type == pa_fs.FileType.NotFound:
+        return set()
+    by_ticker_aggs_ds = pa_ds.dataset(
+        config.by_ticker_aggs_arrow_dir,
+        format="parquet",
+        schema=custom_aggs_schema(),
+        partitioning=custom_aggs_partitioning(),
+    )
+    return set(
+        [
+            pa_ds.get_partition_keys(fragment.partition_expression).get("date")
+            for fragment in by_ticker_aggs_ds.get_fragments()
+        ]
+    )
+
+
+def generate_batches_for_schedule(schedule, aggs_ds):
+    for timestamp in schedule:
+        print(f"{timestamp=}")
+        table = table_for_date(aggs_ds=aggs_ds, date=timestamp)
+        for batch in table.to_batches():
+            yield batch
 
 
 def scatter_custom_aggs_to_by_ticker(
@@ -363,21 +392,42 @@ def scatter_custom_aggs_to_by_ticker(
     aggs_ds = pa_ds.dataset(
         config.aggs_dir,
         format="parquet",
-        schema=custom_aggs_schema(tz=config.calendar.tz.key),
+        schema=custom_aggs_schema(),
         partitioning=custom_aggs_partitioning(),
     )
     by_ticker_partitioning = pa_ds.partitioning(
         pa.schema([(PARTITION_COLUMN_NAME, pa.string())]), flavor="hive"
     )
-    for timestamp in schedule:
-        pa_ds.write_dataset(
-            table_for_date(aggs_ds=aggs_ds, date=timestamp.to_pydatetime().date()),
-            base_dir=by_ticker_aggs_arrow_dir,
-            partitioning=by_ticker_partitioning,
-            format="parquet",
-            existing_data_behavior="overwrite_or_ignore",
-            # file_visitor=file_visitor,
-        )
+    by_ticker_schema = custom_aggs_schema()
+    by_ticker_schema = by_ticker_schema.append(
+        pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False)
+    )
+    # # TODO: Collect the dates we've scattered and write a special partition key with them.
+    # for timestamp in schedule:
+    #     print(f"{timestamp=}")
+    #     table = table_for_date(aggs_ds=aggs_ds, date=timestamp)
+    #     print(f"{table.to_pandas().head()=}")
+    #     pa_ds.write_dataset(
+    #         table,
+    #         base_dir=by_ticker_aggs_arrow_dir,
+    #         partitioning=by_ticker_partitioning,
+    #         format="parquet",
+    #         existing_data_behavior="append",
+    #         # file_visitor=file_visitor,
+    #     )
+
+    # TODO: Collect the dates we've scattered and write a special partition key with them.
+    pa_ds.write_dataset(
+        generate_batches_for_schedule(schedule, aggs_ds),
+        schema=by_ticker_schema,
+        base_dir=by_ticker_aggs_arrow_dir,
+        partitioning=by_ticker_partitioning,
+        format="parquet",
+        existing_data_behavior="overwrite_or_ignore",
+        max_open_files=85,
+        # file_visitor=file_visitor,
+    )
+
     print(f"Scattered custom aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
     return by_ticker_aggs_arrow_dir
 
