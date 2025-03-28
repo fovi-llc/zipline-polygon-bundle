@@ -12,6 +12,9 @@ import datetime
 import re
 import fnmatch
 
+AGG_TIME_DAY = "day"
+AGG_TIME_MINUTE = "minute"
+AGG_TIME_TRADES = "1minute"
 
 PARTITION_COLUMN_NAME = "part"
 PARTITION_KEY_LENGTH = 2
@@ -39,7 +42,7 @@ class PolygonConfig:
         calendar_name: str,
         start_date: Date,
         end_date: Date,
-        agg_time: str = "day",
+        agg_time: str = AGG_TIME_DAY,
     ):
         self.calendar_name = calendar_name
         self.start_date = start_date
@@ -101,6 +104,10 @@ class PolygonConfig:
 
         self.cache_dir = os.path.join(self.custom_asset_files_dir, "api_cache")
 
+        self.lock_file_path = os.path.join(self.custom_asset_files_dir, "ingest.lock")
+        self.custom_aggs_dates_path = os.path.join(self.custom_asset_files_dir, "aggs_dates.json")
+        self.by_ticker_dates_path = os.path.join(self.custom_asset_files_dir, "by_ticker_dates.json")
+
         self.minute_by_ticker_dir = os.path.join(
             self.custom_asset_files_dir, "minute_by_ticker_v1"
         )
@@ -123,12 +130,12 @@ class PolygonConfig:
                 self.custom_asset_files_dir,
                 (self.custom_aggs_name_format + "_by_ticker").format(config=self),
             )
-        elif agg_time == "minute":
+        elif agg_time == AGG_TIME_MINUTE:
             self.agg_timedelta = pd.to_timedelta("1minute")
             self.aggs_dir = self.minute_aggs_dir
             self.csv_files_dir = self.aggs_dir
             self.by_ticker_dir = self.minute_by_ticker_dir
-        elif agg_time == "day":
+        elif agg_time == AGG_TIME_DAY:
             self.agg_timedelta = pd.to_timedelta("1day")
             self.aggs_dir = self.day_aggs_dir
             self.csv_files_dir = self.aggs_dir
@@ -139,7 +146,7 @@ class PolygonConfig:
             )
 
         self.arrow_format = environ.get(
-            "POLYGON_ARROW_FORMAT", "parquet" if self.agg_time == "day" else "hive"
+            "POLYGON_ARROW_FORMAT", "parquet" if self.agg_time == AGG_TIME_DAY else "hive"
         )
         # self.by_ticker_hive_dir = os.path.join(
         #     self.by_ticker_dir,

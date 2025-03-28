@@ -363,16 +363,29 @@ def get_by_ticker_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
 
 def generate_batches_for_schedule(schedule, aggs_ds):
     for timestamp in schedule:
-        print(f"{timestamp=}")
+        # print(f"{timestamp=}")
         table = table_for_date(aggs_ds=aggs_ds, date=timestamp)
         for batch in table.to_batches():
             yield batch
 
 
-def scatter_custom_aggs_to_by_ticker(
-    config: PolygonConfig,
-    overwrite: bool = False,
-) -> str:
+# def scatter_custom_aggs_to_by_ticker(
+#     config: PolygonConfig,
+#     overwrite: bool = False,
+# ) -> str:
+#     lock = FileLock(config.lock_file_path, blocking=False)
+#     with lock:
+#         if not lock.is_locked:
+#             raise IOError("Failed to acquire lock for updating custom assets.")
+#         with open(config.by_ticker_dates_path, "a") as f:
+#             f.write("I have a bad feeling about this.")
+#             by_ticker_aggs_arrow_dir = scatter_custom_aggs_to_by_ticker_(config, overwrite)
+
+#             print(f"Scattered custom aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
+#             return by_ticker_aggs_arrow_dir
+
+
+def scatter_custom_aggs_to_by_ticker(config, overwrite=False) -> str:
     file_info = config.filesystem.get_file_info(config.aggs_dir)
     if file_info.type == pa_fs.FileType.NotFound:
         raise FileNotFoundError(f"{config.aggs_dir=} not found.")
@@ -427,8 +440,7 @@ def scatter_custom_aggs_to_by_ticker(
         max_open_files=85,
         # file_visitor=file_visitor,
     )
-
-    print(f"Scattered custom aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
+    
     return by_ticker_aggs_arrow_dir
 
 

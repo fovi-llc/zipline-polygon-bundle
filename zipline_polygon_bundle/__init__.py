@@ -1,8 +1,7 @@
 from .bundle import (
     register_polygon_equities_bundle,
     symbol_to_upper,
-    polygon_equities_bundle_day,
-    polygon_equities_bundle_minute,
+    ingest_polygon_equities_bundle
 )
 
 from .config import PolygonConfig
@@ -23,8 +22,7 @@ __all__ = [
     "register_nyse_all_hours_calendar",
     "NYSE_ALL_HOURS",
     "symbol_to_upper",
-    "polygon_equities_bundle_day",
-    "polygon_equities_bundle_minute",
+    "ingest_polygon_equities_bundle",
     "PolygonConfig",
     "concat_all_aggs_from_csv",
     "generate_csv_agg_tables",
