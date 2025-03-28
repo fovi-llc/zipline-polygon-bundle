@@ -120,6 +120,7 @@ def custom_aggs_schema(raw: bool = False) -> pa.Schema:
             pa.field("date", pa.date32(), nullable=False),
             pa.field("year", pa.uint16(), nullable=False),
             pa.field("month", pa.uint8(), nullable=False),
+            pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False),
         ]
     )
 
@@ -242,9 +243,23 @@ def trades_to_custom_aggs(
     table = table.append_column(
         "month", pa.array(np.full(len(table), date.month), type=pa.uint8())
     )
+    table = table.append_column(
+        PARTITION_COLUMN_NAME,
+        pa.array(
+            [to_partition_key(ticker) for ticker in table.column("ticker").to_pylist()]
+        ),
+    )
     table = table.sort_by([("window_start", "ascending"), ("ticker", "ascending")])
     # print(f"aggs {date=} {table.to_pandas().head()=}")
     return table
+
+
+# def generate_custom_agg_batches_from_tables(config: PolygonConfig):
+#     for date, trades_table in generate_csv_trades_tables(config):
+#         aggs_table = trades_to_custom_aggs(config, date, trades_table)
+#         yield aggs_table
+#         del aggs_table
+#         del trades_table
 
 
 def file_visitor(written_file):
@@ -268,12 +283,12 @@ def convert_trades_to_custom_aggs(
     #     generate_custom_agg_batches_from_tables(config),
     #     schema=custom_aggs_schema(),
     #     filesystem=config.filesystem,
-    #     base_dir=config.custom_aggs_dir,
+    #     base_dir=config.aggs_dir,
     #     partitioning=custom_aggs_partitioning(),
     #     format="parquet",
     #     existing_data_behavior="overwrite_or_ignore",
-    #     max_open_files = MAX_FILES_OPEN,
-    #     min_rows_per_group = MIN_ROWS_PER_GROUP,
+    #     # max_open_files = MAX_FILES_OPEN,
+    #     # min_rows_per_group = MIN_ROWS_PER_GROUP,
     # )
 
     for date, trades_table in generate_csv_trades_tables(config):
@@ -286,7 +301,7 @@ def convert_trades_to_custom_aggs(
             format="parquet",
             existing_data_behavior="overwrite_or_ignore",
             file_visitor=file_visitor,
-            # max_open_files=MAX_FILES_OPEN,
+            # max_open_files=10,
             # min_rows_per_group=MIN_ROWS_PER_GROUP,
         )
         del aggs_table
@@ -385,63 +400,156 @@ def generate_batches_for_schedule(schedule, aggs_ds):
 #             return by_ticker_aggs_arrow_dir
 
 
-def scatter_custom_aggs_to_by_ticker(config, overwrite=False) -> str:
-    file_info = config.filesystem.get_file_info(config.aggs_dir)
-    if file_info.type == pa_fs.FileType.NotFound:
-        raise FileNotFoundError(f"{config.aggs_dir=} not found.")
-
-    by_ticker_aggs_arrow_dir = config.by_ticker_aggs_arrow_dir
-    if os.path.exists(by_ticker_aggs_arrow_dir):
-        if overwrite:
-            print(f"Removing {by_ticker_aggs_arrow_dir=}")
-            shutil.rmtree(by_ticker_aggs_arrow_dir)
-
-    schedule = config.calendar.trading_index(
-        start=config.start_timestamp, end=config.end_timestamp, period="1D"
+def filter_by_date(config: PolygonConfig) -> pa_compute.Expression:
+    start_date = config.start_timestamp.tz_localize(config.calendar.tz.key).date()
+    limit_date = (
+        (config.end_timestamp + pd.Timedelta(days=1))
+        .tz_localize(config.calendar.tz.key)
+        .date()
     )
-    assert type(schedule) is pd.DatetimeIndex
+    expr = (
+        (pa_compute.field("year") >= start_date.year)
+        & (pa_compute.field("month") >= start_date.month)
+        & (pa_compute.field("date") >= start_date)
+    ) & (
+        (pa_compute.field("year") <= limit_date.year)
+        & (pa_compute.field("month") <= limit_date.month)
+        & (pa_compute.field("date") <= limit_date)
+    )
+    return expr
 
-    print(f"Scattering custom aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
+
+# def generate_batches_with_partition(
+#     config: PolygonConfig,
+#     aggs_ds: pa_ds.Dataset,
+# ) -> Iterator[pa.Table]:
+#     for fragment in aggs_ds.sort_by("date").get_fragments(
+#         filter=filter_by_date(config),
+#     ):
+#         for batch in fragment.to_batches():
+#             # batch = batch.append_column(
+#             #     PARTITION_COLUMN_NAME,
+#             #     pa.array(
+#             #         [
+#             #             to_partition_key(ticker)
+#             #             for ticker in batch.column("ticker").to_pylist()
+#             #         ]
+#             #     ),
+#             # )
+#             yield batch.sort_by(
+#                 [("ticker", "ascending"), ("window_start", "ascending")]
+#             )
+#             del batch
+#         del fragment
+
+
+def generate_batches_with_partition(
+    config: PolygonConfig,
+    aggs_ds: pa_ds.Dataset,
+) -> Iterator[pa.Table]:
+    for fragment in (
+        aggs_ds.filter(filter_by_date(config))
+        .sort_by([(PARTITION_COLUMN_NAME, "ascending"), ("date", "ascending")])
+        .get_fragments()
+    ):
+        for batch in fragment.to_batches():
+            yield batch.sort_by(
+                [("ticker", "ascending"), ("window_start", "ascending")]
+            )
+            del batch
+        del fragment
+
+
+def scatter_custom_aggs_to_by_ticker(config, overwrite=False) -> str:
     aggs_ds = pa_ds.dataset(
         config.aggs_dir,
         format="parquet",
         schema=custom_aggs_schema(),
         partitioning=custom_aggs_partitioning(),
     )
-    by_ticker_partitioning = pa_ds.partitioning(
-        pa.schema([(PARTITION_COLUMN_NAME, pa.string())]), flavor="hive"
+    by_ticker_schema = aggs_ds.schema
+    # by_ticker_schema = aggs_ds.schema.append(
+    #     pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False),
+    # )
+    partitioning = pa_ds.partitioning(
+        pa.schema([(PARTITION_COLUMN_NAME, pa.string())]),
+        # pa.schema(
+        #     [
+        #         (PARTITION_COLUMN_NAME, pa.string()),
+        #         ("year", pa.uint16()),
+        #         ("month", pa.uint8()),
+        #         ("date", pa.date32()),
+        #     ]
+        # ),
+        flavor="hive",
     )
-    by_ticker_schema = custom_aggs_schema()
-    by_ticker_schema = by_ticker_schema.append(
-        pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False)
-    )
-    # # TODO: Collect the dates we've scattered and write a special partition key with them.
-    # for timestamp in schedule:
-    #     print(f"{timestamp=}")
-    #     table = table_for_date(aggs_ds=aggs_ds, date=timestamp)
-    #     print(f"{table.to_pandas().head()=}")
-    #     pa_ds.write_dataset(
-    #         table,
-    #         base_dir=by_ticker_aggs_arrow_dir,
-    #         partitioning=by_ticker_partitioning,
-    #         format="parquet",
-    #         existing_data_behavior="append",
-    #         # file_visitor=file_visitor,
-    #     )
-
-    # TODO: Collect the dates we've scattered and write a special partition key with them.
+    by_ticker_aggs_arrow_dir = config.by_ticker_aggs_arrow_dir
+    print(f"Scattering custom aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
     pa_ds.write_dataset(
-        generate_batches_for_schedule(schedule, aggs_ds),
+        generate_batches_with_partition(config=config, aggs_ds=aggs_ds),
         schema=by_ticker_schema,
         base_dir=by_ticker_aggs_arrow_dir,
-        partitioning=by_ticker_partitioning,
+        partitioning=partitioning,
         format="parquet",
         existing_data_behavior="overwrite_or_ignore",
-        max_open_files=85,
-        # file_visitor=file_visitor,
     )
-    
+    print(f"Scattered aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
     return by_ticker_aggs_arrow_dir
+
+
+# def scatter_custom_aggs_to_by_ticker(config, overwrite=False) -> str:
+#     file_info = config.filesystem.get_file_info(config.aggs_dir)
+#     if file_info.type == pa_fs.FileType.NotFound:
+#         raise FileNotFoundError(f"{config.aggs_dir=} not found.")
+
+#     by_ticker_aggs_arrow_dir = config.by_ticker_aggs_arrow_dir
+#     if os.path.exists(by_ticker_aggs_arrow_dir):
+#         if overwrite:
+#             print(f"Removing {by_ticker_aggs_arrow_dir=}")
+#             shutil.rmtree(by_ticker_aggs_arrow_dir)
+
+#     schedule = config.calendar.trading_index(
+#         start=config.start_timestamp, end=config.end_timestamp, period="1D"
+#     )
+#     assert type(schedule) is pd.DatetimeIndex
+
+#     print(f"Scattering custom aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
+#     aggs_ds = pa_ds.dataset(
+#         config.aggs_dir,
+#         format="parquet",
+#         schema=custom_aggs_schema(),
+#         partitioning=custom_aggs_partitioning(),
+#     )
+#     by_ticker_partitioning = pa_ds.partitioning(
+#         pa.schema([(PARTITION_COLUMN_NAME, pa.string())]),
+#         # pa.schema(
+#         #     [
+#         #         (PARTITION_COLUMN_NAME, pa.string()),
+#         #         ("year", pa.uint16()),
+#         #         ("month", pa.uint8()),
+#         #         ("date", pa.date32()),
+#         #     ]
+#         # ),
+#         flavor="hive",
+#     )
+#     by_ticker_schema = custom_aggs_schema()
+#     by_ticker_schema = by_ticker_schema.append(
+#         pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False),
+#     )
+
+#     # TODO: Collect the dates we've scattered and write a special partition key with them.
+#     pa_ds.write_dataset(
+#         generate_batches_for_schedule(schedule, aggs_ds),
+#         schema=by_ticker_schema,
+#         base_dir=by_ticker_aggs_arrow_dir,
+#         partitioning=by_ticker_partitioning,
+#         format="parquet",
+#         existing_data_behavior="overwrite_or_ignore",
+#         # max_open_files=250,
+#         # file_visitor=file_visitor,
+#     )
+
+#     return by_ticker_aggs_arrow_dir
 
 
 # def generate_tables_from_custom_aggs_ds(
