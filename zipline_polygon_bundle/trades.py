@@ -12,7 +12,6 @@ from fsspec.implementations.arrow import ArrowFSWrapper
 
 import os
 import datetime
-import shutil
 
 import numpy as np
 import pandas as pd
@@ -407,16 +406,9 @@ def filter_by_date(config: PolygonConfig) -> pa_compute.Expression:
         .tz_localize(config.calendar.tz.key)
         .date()
     )
-    expr = (
-        (pa_compute.field("year") >= start_date.year)
-        & (pa_compute.field("month") >= start_date.month)
-        & (pa_compute.field("date") >= start_date)
-    ) & (
-        (pa_compute.field("year") <= limit_date.year)
-        & (pa_compute.field("month") <= limit_date.month)
-        & (pa_compute.field("date") <= limit_date)
+    return (pa_compute.field("date") >= start_date) & (
+        pa_compute.field("date") <= limit_date
     )
-    return expr
 
 
 # def generate_batches_with_partition(
