@@ -348,12 +348,6 @@ def table_for_date(aggs_ds: pa_ds.Dataset, date: pd.Timestamp) -> pa.Table:
     # And if we're doing that (figuring date for each file), we can just skip reading the file.
     # Might able to do a single comparison using compute.days_between.
     # https://arrow.apache.org/docs/python/generated/pyarrow.compute.days_between.html
-    table = table.append_column(
-        PARTITION_COLUMN_NAME,
-        pa.array(
-            [to_partition_key(ticker) for ticker in table.column("ticker").to_pylist()]
-        ),
-    )
     return table
 
 
@@ -375,12 +369,17 @@ def get_by_ticker_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
     )
 
 
-def generate_batches_for_schedule(schedule, aggs_ds):
+def generate_batches_for_schedule(config, aggs_ds):
+    schedule = config.calendar.trading_index(
+        start=config.start_timestamp, end=config.end_timestamp, period="1D"
+    )
     for timestamp in schedule:
         # print(f"{timestamp=}")
         table = table_for_date(aggs_ds=aggs_ds, date=timestamp)
         for batch in table.to_batches():
             yield batch
+            del batch
+        del table
 
 
 # def scatter_custom_aggs_to_by_ticker(
@@ -465,20 +464,13 @@ def scatter_custom_aggs_to_by_ticker(config, overwrite=False) -> str:
     # )
     partitioning = pa_ds.partitioning(
         pa.schema([(PARTITION_COLUMN_NAME, pa.string())]),
-        # pa.schema(
-        #     [
-        #         (PARTITION_COLUMN_NAME, pa.string()),
-        #         ("year", pa.uint16()),
-        #         ("month", pa.uint8()),
-        #         ("date", pa.date32()),
-        #     ]
-        # ),
         flavor="hive",
     )
     by_ticker_aggs_arrow_dir = config.by_ticker_aggs_arrow_dir
     print(f"Scattering custom aggregates by ticker to {by_ticker_aggs_arrow_dir=}")
     pa_ds.write_dataset(
-        generate_batches_with_partition(config=config, aggs_ds=aggs_ds),
+        # generate_batches_with_partition(config=config, aggs_ds=aggs_ds),
+        generate_batches_for_schedule(config=config, aggs_ds=aggs_ds),
         schema=by_ticker_schema,
         base_dir=by_ticker_aggs_arrow_dir,
         partitioning=partitioning,
