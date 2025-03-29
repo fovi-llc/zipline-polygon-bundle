@@ -336,21 +336,6 @@ def convert_trades_to_custom_aggs(
 #     return mfi
 
 
-def table_for_date(aggs_ds: pa_ds.Dataset, date: pd.Timestamp) -> pa.Table:
-    date_filter_expr = (
-        (pa_compute.field("year") == date.year)
-        & (pa_compute.field("month") == date.month)
-        & (pa_compute.field("date") == date.date())
-    )
-    print(f"table for {date=}")
-    table = aggs_ds.to_table(filter=date_filter_expr)
-    # TODO: Check that these rows are within range for this file's date (not just the whole session).
-    # And if we're doing that (figuring date for each file), we can just skip reading the file.
-    # Might able to do a single comparison using compute.days_between.
-    # https://arrow.apache.org/docs/python/generated/pyarrow.compute.days_between.html
-    return table
-
-
 def get_by_ticker_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
     file_info = config.filesystem.get_file_info(config.by_ticker_aggs_arrow_dir)
     if file_info.type == pa_fs.FileType.NotFound:
@@ -369,17 +354,25 @@ def get_by_ticker_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
     )
 
 
+def batches_for_date(aggs_ds: pa_ds.Dataset, date: pd.Timestamp):
+    date_filter_expr = (
+        (pa_compute.field("year") == date.year)
+        & (pa_compute.field("month") == date.month)
+        & (pa_compute.field("date") == date.date())
+    )
+    print(f"table for {date=}")
+    # return aggs_ds.scanner(filter=date_filter_expr).to_batches()
+    table = aggs_ds.scanner(filter=date_filter_expr).to_table()
+    table = table.sort_by([("part", "ascending"), ("ticker", "ascending"), ("window_start", "ascending"), ])
+    return table.to_batches()
+
 def generate_batches_for_schedule(config, aggs_ds):
     schedule = config.calendar.trading_index(
         start=config.start_timestamp, end=config.end_timestamp, period="1D"
     )
     for timestamp in schedule:
         # print(f"{timestamp=}")
-        table = table_for_date(aggs_ds=aggs_ds, date=timestamp)
-        for batch in table.to_batches():
-            yield batch
-            del batch
-        del table
+        yield from batches_for_date(aggs_ds=aggs_ds, date=timestamp)
 
 
 # def scatter_custom_aggs_to_by_ticker(
@@ -459,9 +452,6 @@ def scatter_custom_aggs_to_by_ticker(config, overwrite=False) -> str:
         partitioning=custom_aggs_partitioning(),
     )
     by_ticker_schema = aggs_ds.schema
-    # by_ticker_schema = aggs_ds.schema.append(
-    #     pa.field(PARTITION_COLUMN_NAME, pa.string(), nullable=False),
-    # )
     partitioning = pa_ds.partitioning(
         pa.schema([(PARTITION_COLUMN_NAME, pa.string())]),
         flavor="hive",

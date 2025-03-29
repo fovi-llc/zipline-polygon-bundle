@@ -1,6 +1,6 @@
 [project]
 name = 'zipline_polygon_bundle'
-version = '0.2.0dev7'
+version = '0.2.0dev8'
 description = 'A zipline-reloaded data provider bundle for Polygon.io'
 authors = [
     { name = 'Jim White', email = 'jim@fovi.com' },
@@ -19,7 +19,7 @@ Repository = 'https://github.com/fovi-llc/zipline-polygon-bundle'
 
 [tool.poetry]
 name = 'zipline-polygon-bundle'
-version = '0.2.0dev7'
+version = '0.2.0dev8'
 description = 'A zipline-reloaded data provider bundle for Polygon.io'
 authors = ['Jim White <jim@fovi.com>']
 license = 'AGPL-3.0'
