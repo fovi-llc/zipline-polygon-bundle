@@ -459,8 +459,8 @@ def register_polygon_equities_bundle(
 ):
     register_nyse_all_hours_calendar()
 
-    pd.set_option("display.max_columns", None)
-    pd.set_option("display.width", 500)
+    # pd.set_option("display.max_columns", None)
+    # pd.set_option("display.width", 500)
 
     # Note that "minute" is the Polygon minute aggs and "1minute" is the trades.
     if agg_time not in [AGG_TIME_DAY, AGG_TIME_MINUTE, AGG_TIME_TRADES, "1min", "1minute"]:
@@ -483,7 +483,7 @@ def register_polygon_equities_bundle(
             config.aggs_dir if agg_time in [AGG_TIME_DAY, AGG_TIME_MINUTE] else config.trades_dir,
             config.csv_paths_pattern,
         )
-        print(f"{first_aggs_date=} {last_aggs_date=}")
+        # print(f"{bundlename=} {first_aggs_date=} {last_aggs_date=}")
         if start_date is None:
             start_date = first_aggs_date
         if end_date is None:
