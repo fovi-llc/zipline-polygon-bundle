@@ -1724,6 +1724,10 @@ files = [
     {file = "tables-3.10.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e36ce9f10471c69c1f0b06c6966de762558a35d62592c55df7994a8019adaf0c"},
     {file = "tables-3.10.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f233e78cc9fa4157ec4c3ef2abf01a731fe7969bc6ed73539e5f4cd3b94c98b2"},
     {file = "tables-3.10.1-cp312-cp312-win_amd64.whl", hash = "sha256:34357d2f2f75843a44e6fe54d1f11fc2e35a8fd3cb134df3d3362cff78010adb"},
+    {file = "tables-3.10.1-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:6fc5b46a4f359249c3ab9a0a0a2448d7e680e68cffd63fdf3fb7171781edd46e"},
+    {file = "tables-3.10.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:2ecabd7f459d40b7f9f5256850dd5f43773fda7b789f827de92c3d26df1e320f"},
+    {file = "tables-3.10.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:40a4ee18f3c9339d9dd8fd3777c75cda5768f2ff347064a2796f59161a190af8"},
+    {file = "tables-3.10.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:757c6ea257c174af8036cf8f273ede756bbcd6db5ac7e2a4d64e788b0f371152"},
     {file = "tables-3.10.1.tar.gz", hash = "sha256:4aa07ac734b9c037baeaf44aec64ec902ad247f57811b59f30c4e31d31f126cf"},
 ]
 
@@ -1951,14 +1955,25 @@ files = [
 
 [[package]]
 name = "zipline-arrow"
-version = "3.2.0"
+version = "3.2.2"
 description = "A Pythonic backtester for trading algorithms"
 optional = false
 python-versions = "<4,>=3.10"
 groups = ["main"]
 files = [
-    {file = "zipline_arrow-3.2.0-py3-none-any.whl", hash = "sha256:8fc15c653d5f5b61d021efce906258df4ebb3ff9a230c379784659ffb61440cb"},
-    {file = "zipline_arrow-3.2.0.tar.gz", hash = "sha256:6d7a35d03a6472edc42a25ac314bf94aae51eb23730246f0c36314ca130cf5f3"},
+    {file = "zipline_arrow-3.2.2-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:fee11755a607a21742cf724b0404592e6eed3fb37a721d2bcafa4e8256e87d25"},
+    {file = "zipline_arrow-3.2.2-cp310-cp310-macosx_11_0_x86_64.whl", hash = "sha256:8158bba943c0893b24b26c9858c88e9401a3691d388fca5930daf96cb35e8619"},
+    {file = "zipline_arrow-3.2.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:941dd0194027c0b12675130147a297413bef42d8a1ff5d144d098f9bc03cef5c"},
+    {file = "zipline_arrow-3.2.2-cp310-cp310-win_amd64.whl", hash = "sha256:6f21ae04e03808db5376ac67af08a9867310321b15f0f6cb92ca639ab050555f"},
+    {file = "zipline_arrow-3.2.2-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:7e1732ba60c1ff8d135edbe87a4718c0ef7b94b43266da9e791f1cf009744a19"},
+    {file = "zipline_arrow-3.2.2-cp311-cp311-macosx_11_0_x86_64.whl", hash = "sha256:ff83c705d2120b1587fec9368d4088d1ed9322ca2c7014987a563bd52d55faf9"},
+    {file = "zipline_arrow-3.2.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e437d561ad2e3a05203f881ac937ea5b43b37a80ceb22b68f5777c1dfb8dd838"},
+    {file = "zipline_arrow-3.2.2-cp311-cp311-win_amd64.whl", hash = "sha256:e05a97bc86c4d712e1c3f7f0bc78b667d75a75203b76b0f0ebeea0ef0c863003"},
+    {file = "zipline_arrow-3.2.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:7301af3463e0d0957042c7489a31098a8c4c0127dabf429e156871ce4bacee31"},
+    {file = "zipline_arrow-3.2.2-cp312-cp312-macosx_11_0_x86_64.whl", hash = "sha256:90310b33ecd187dc5e44311ed360dedaa100042d0c5e57353c9541715f77231a"},
+    {file = "zipline_arrow-3.2.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2306325b1f0349041c9d283e3100c133dcedcf1fe2da377c210e133d7e57dc94"},
+    {file = "zipline_arrow-3.2.2-cp312-cp312-win_amd64.whl", hash = "sha256:232745aaf265e0102a463a3f8f4cf35ac8ddd8c1b7c86674933b2b2e95acf26b"},
+    {file = "zipline_arrow-3.2.2.tar.gz", hash = "sha256:469bed70d2256f086f5ab00341066daeb89c98f35fefdf8c175662ac24f10db5"},
 ]
 
 [package.dependencies]
@@ -1969,7 +1984,7 @@ click = ">=4.0.0"
 empyrical-reloaded = ">=0.5.7"
 exchange-calendars = ">=4.10"
 h5py = ">=2.7.1"
-intervaltree = ">=2.1.0"
+intervaltree = ">=3"
 iso3166 = ">=2.1.1"
 iso4217 = ">=1.6.20180829"
 lru-dict = ">=1.1.4"
@@ -1980,13 +1995,13 @@ numpy = [
     {version = ">=1.23.5", markers = "python_version < \"3.12\""},
     {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
 ]
-pandas = ">=1.3.0,<3.0"
+pandas = ">=2.2,<3.0"
 patsy = ">=0.4.0"
 python-dateutil = ">=2.4.2"
 python-interface = ">=1.5.3"
 pytz = ">=2018.5"
 requests = ">=2.9.1"
-scipy = ">=0.17.1"
+scipy = ">=1.15"
 six = ">=1.10.0"
 sqlalchemy = ">=2"
 statsmodels = ">=0.6.1"
@@ -1994,11 +2009,11 @@ tables = ">=3.4.3"
 toolz = ">=0.8.2"
 
 [package.extras]
-dev = ["black (>=24.0b1)", "cython (>=0.29.21)", "flake8 (>=3.9.1)", "pre-commit (>=2.12.1)", "ruff"]
+dev = ["black[jupyter] (>=25)", "cython (>=3)", "flake8 (>=7)", "pre-commit (>=4.2)", "ruff"]
 docs = ["cython", "m2r2", "numpydoc (>=0.5.0)", "pydata-sphinx-theme", "sphinx (>=1.3.2)", "sphinx-autobuild (>=0.6.0)", "sphinx_markdown_tables"]
-test = ["click", "coverage", "flake8 (>=3.9.1)", "matplotlib (>=1.5.3)", "pandas-datareader (>=0.2.1)", "parameterized (>=0.6.1)", "pytest (>=7.2.0)", "pytest-cov (>=3.0.0)", "pytest-rerunfailures", "pytest-timeout (>=1.4.2)", "pytest-xdist (>=2.5.0)", "responses (>=0.9.0)", "testfixtures (>=4.1.2)", "tox"]
+test = ["click", "coverage", "flake8 (>=3.9.1)", "matplotlib (>=1.5.3)", "pandas-datareader (>=0.2.1)", "parameterized (>=0.8)", "pytest (>=8)", "pytest-cov (>=3.0.0)", "pytest-rerunfailures", "pytest-timeout (>=2)", "pytest-xdist (>=3.6)", "responses (>=0.9.0)", "testfixtures (>=4.1.2)", "tox"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<4.0"
-content-hash = "7780ccc9e03e0ee5bcadcd6597fd65087ab06b1a2549a1bf79e16eea0dde4bb4"
+content-hash = "32dec07ebd44479d8d7cdd3508e8097fffc0014af5d88239f502b12b0bd9fca4"

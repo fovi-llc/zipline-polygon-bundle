@@ -46,8 +46,8 @@ requests = ">=2.9.1"
 bcolz-zipline = ">=1.2.11"
 pyarrow = ">=18.1.0,<19"
 numpy = "<2"
-toolz = ">=0.8.2"
-zipline-arrow = { version = ">=3.2" }
+toolz = ">=1"
+zipline-arrow = { version = ">=3.2.2" }
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
