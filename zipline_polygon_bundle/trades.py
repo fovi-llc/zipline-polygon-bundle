@@ -116,6 +116,7 @@ def custom_aggs_schema(raw: bool = False) -> pa.Schema:
             pa.field("low", price_type, nullable=False),
             pa.field("window_start", timestamp_type, nullable=False),
             pa.field("transactions", pa.int64(), nullable=False),
+            pa.field("vwap", price_type, nullable=False),
             pa.field("date", pa.date32(), nullable=False),
             pa.field("year", pa.uint16(), nullable=False),
             pa.field("month", pa.uint8(), nullable=False),
@@ -365,6 +366,7 @@ def batches_for_date(aggs_ds: pa_ds.Dataset, date: pd.Timestamp):
     table = aggs_ds.scanner(filter=date_filter_expr).to_table()
     table = table.sort_by([("part", "ascending"), ("ticker", "ascending"), ("window_start", "ascending"), ])
     return table.to_batches()
+
 
 def generate_batches_for_schedule(config, aggs_ds):
     schedule = config.calendar.trading_index(
