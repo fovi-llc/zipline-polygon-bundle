@@ -71,17 +71,6 @@ class PolygonConfig:
         )
         self.market = environ.get("POLYGON_MARKET", "stocks")
         self.asset_subdir = environ.get("POLYGON_ASSET_SUBDIR", "us_stocks_sip")
-        self.tickers_dir = environ.get(
-            "POLYGON_TICKERS_DIR",
-            os.path.join(os.path.join(self.data_dir, "tickers"), self.asset_subdir),
-        )
-        self.tickers_csv_path = environ.get(
-            "POLYGON_TICKERS_CSV",
-            os.path.join(
-                self.tickers_dir,
-                f"tickers_{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.csv",
-            ),
-        )
         self.flat_files_dir = environ.get(
             "POLYGON_FLAT_FILES_DIR", os.path.join(self.data_dir, "flatfiles")
         )
@@ -100,6 +89,17 @@ class PolygonConfig:
         # TODO: The "by ticker" files are temporary/intermediate and should/could be in the zipline data dir.
         self.custom_asset_files_dir = environ.get(
             "CUSTOM_ASSET_FILES_DIR", self.asset_files_dir
+        )
+        self.tickers_dir = environ.get(
+            "POLYGON_TICKERS_DIR",
+            os.path.join(self.custom_asset_files_dir, "tickers"),
+        )
+        self.tickers_csv_path = environ.get(
+            "POLYGON_TICKERS_CSV",
+            os.path.join(
+                self.tickers_dir,
+                f"tickers_{self.start_timestamp.date().isoformat()}_{self.end_timestamp.date().isoformat()}.csv",
+            ),
         )
 
         self.cache_dir = os.path.join(self.custom_asset_files_dir, "api_cache")
