@@ -3,7 +3,7 @@ from zipline.utils.calendar_utils import get_calendar
 
 from .nyse_all_hours_calendar import NYSE_ALL_HOURS
 
-from typing import Iterator, Tuple
+from typing import Iterator, Mapping, Tuple
 
 import pandas as pd
 from pyarrow.fs import LocalFileSystem
@@ -38,7 +38,7 @@ def to_partition_key(s: str) -> str:
 class PolygonConfig:
     def __init__(
         self,
-        environ: dict,
+        environ: Mapping[str, str],
         calendar_name: str,
         start_date: Date,
         end_date: Date,
