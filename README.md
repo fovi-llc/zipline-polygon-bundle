@@ -83,7 +83,7 @@ register_polygon_equities_bundle(
 
 ```bash
 sudo apt-get update
-sudo apt-get install python3-dev python3-poetry
+sudo apt-get install python3-dev python3-poetry gcc-multilib
 
 CFLAGS=$(python3-config --includes) pip install git+https://github.com/fovi-llc/zipline-arrow.git
 ```

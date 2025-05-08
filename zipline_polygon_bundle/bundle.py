@@ -203,6 +203,16 @@ def process_minute_table(
                 metadata.loc[sid, "auto_close_date"] = auto_close_date
             else:
                 # Add a row to the metadata DataFrame. Don't forget to add an exchange field.
+                # metadata = pd.DataFrame(
+                #     columns=(
+                #         "start_date",
+                #         "end_date",
+                #         "auto_close_date",
+                #         "symbol",
+                #         "exchange",
+                #         "asset_name",
+                #     )
+                # )
                 metadata.loc[sid] = (
                     start_date,
                     end_date,

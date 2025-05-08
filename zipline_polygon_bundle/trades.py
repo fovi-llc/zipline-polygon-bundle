@@ -17,6 +17,29 @@ import numpy as np
 import pandas as pd
 
 
+# Polygon Trade Conditions codes that don't reflect a current market-priced trade.
+# https://polygon.io/docs/rest/stocks/market-operations/condition-codes
+# Odd lots are excluded because although their volume counts the prices don't.
+EXCLUDED_CONDITION_CODES = {
+    # 2,   # Average Price
+    # 7,   # Cash Sale
+    10,  # Derivatively Priced
+    # 12,  # Form T / Extended Hours
+    13,  # Extended Hours (Sold Out Of Sequence)
+    # 15,  # Official Close
+    # 16,  # Official Open
+    20,  # Next Day
+    21,  # Price Variation
+    # 22,  # Prior Reference
+    29,  # Seller
+    32,  # Sold (Out of Sequence)
+    # 33,  # Sold + Stopped
+    41,  # Trade Thru Exempt
+    52,  # Contingent Trade
+    53   # Qualified Contingent Trade
+}
+
+
 def trades_schema(raw: bool = False) -> pa.Schema:
     # There is some problem reading the timestamps as timestamps so we have to read as integer then change the schema.
     # Polygon Aggregate flatfile timestamps are in nanoseconds (like trades), not milliseconds as the docs say.
@@ -89,9 +112,15 @@ def cast_strings_to_list(
     split_array = pa_compute.split_pattern(filled_column, pattern=separator)
 
     # Cast each element in the resulting lists to integers
-    int_list_array = pa_compute.cast(split_array, pa.list_(value_type))
+    return pa_compute.cast(split_array, pa.list_(value_type))
 
-    return int_list_array
+
+def ordinary_trades_mask(table: pa.Table) -> pa.BooleanArray:
+    conditions_dict = table["conditions"].combine_chunks().dictionary_encode()
+    list_of_codes = cast_strings_to_list(conditions_dict.dictionary).to_pylist()
+    code_dictionary = pa.array(set(codes).isdisjoint(EXCLUDED_CONDITION_CODES) for codes in list_of_codes)
+    include_mask = pa.DictionaryArray.from_arrays(conditions_dict.indices, code_dictionary).dictionary_decode()
+    return pa_compute.and_(include_mask, pa_compute.equal(table["correction"], "0"))
 
 
 def cast_trades(trades) -> pa.Table:
@@ -190,15 +219,8 @@ def trades_to_custom_aggs(
     config: PolygonConfig,
     date: datetime.date,
     table: pa.Table,
-    include_trf: bool = False,
 ) -> pa.Table:
     print(f"{date=} {pa.default_memory_pool()=}")
-    # print(f"{datetime.datetime.now()=} {date=} {pa.default_memory_pool()=}")
-    # print(f"{resource.getrusage(resource.RUSAGE_SELF).ru_maxrss=}")
-    table = table.filter(pa_compute.greater(table["size"], 0))
-    table = table.filter(pa_compute.equal(table["correction"], "0"))
-    if not include_trf:
-        table = table.filter(pa_compute.not_equal(table["exchange"], 4))
     table = table.append_column(
         "price_total", pa_compute.multiply(table["price"], table["size"])
     )
@@ -251,6 +273,10 @@ def trades_to_custom_aggs(
     )
     table = table.sort_by([("window_start", "ascending"), ("ticker", "ascending")])
     # print(f"aggs {date=} {table.to_pandas().head()=}")
+    # TODO: Use the inverted filter to get the trades that were ignored for these aggs.
+    # Use a separate function?  Maybe make the filter in a separate function and share it.
+    # ignored_trades_table = table.filter(pa_compute.invert(filter))
+    # return table, ignored_trades_table
     return table
 
 
@@ -279,22 +305,11 @@ def convert_trades_to_custom_aggs(
 
     # pa.set_memory_pool()
 
-    # pa_ds.write_dataset(
-    #     generate_custom_agg_batches_from_tables(config),
-    #     schema=custom_aggs_schema(),
-    #     filesystem=config.filesystem,
-    #     base_dir=config.aggs_dir,
-    #     partitioning=custom_aggs_partitioning(),
-    #     format="parquet",
-    #     existing_data_behavior="overwrite_or_ignore",
-    #     # max_open_files = MAX_FILES_OPEN,
-    #     # min_rows_per_group = MIN_ROWS_PER_GROUP,
-    # )
-
     for date, trades_table in generate_csv_trades_tables(config):
-        aggs_table = trades_to_custom_aggs(config, date, trades_table)
         pa_ds.write_dataset(
-            aggs_table,
+            trades_to_custom_aggs(config,
+                                  date,
+                                  trades_table.filter(ordinary_trades_mask(trades_table))),
             filesystem=config.filesystem,
             base_dir=config.aggs_dir,
             partitioning=custom_aggs_partitioning(),
@@ -304,7 +319,17 @@ def convert_trades_to_custom_aggs(
             # max_open_files=10,
             # min_rows_per_group=MIN_ROWS_PER_GROUP,
         )
-        del aggs_table
+        # pa_ds.write_dataset(
+        #     trades_to_custom_events(config,
+        #                             date,
+        #                             trades_table.filter(pa_compute.invert(ordinary_trades_mask(trades_table)))),
+        #     filesystem=config.filesystem,
+        #     base_dir=config.events_dir,
+        #     partitioning=custom_events_partitioning(),
+        #     format="parquet",
+        #     existing_data_behavior="overwrite_or_ignore",
+        #     file_visitor=file_visitor,
+        # )
         del trades_table
 
     # with ProcessPoolExecutor(max_workers=1) as executor:
