@@ -222,7 +222,7 @@ def trades_to_custom_aggs(
 ) -> pa.Table:
     print(f"{date=} {pa.default_memory_pool()=}")
     table = table.append_column(
-        "price_total", pa_compute.multiply(table["price"], table["size"])
+        "traded_value", pa_compute.multiply(table["price"], table["size"])
     )
     table = table.append_column(
         "window_start",
@@ -230,13 +230,14 @@ def trades_to_custom_aggs(
             table["sip_timestamp"], multiple=config.agg_timedelta.seconds, unit="second"
         ),
     )
+    table = table.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
     table = table.group_by(["ticker", "window_start"], use_threads=False).aggregate(
         [
             ("price", "first"),
             ("price", "max"),
             ("price", "min"),
             ("price", "last"),
-            ("price_total", "sum"),
+            ("traded_value", "sum"),
             ("size", "sum"),
             ([], "count_all"),
         ]
@@ -248,13 +249,21 @@ def trades_to_custom_aggs(
             "price_min": "low",
             "price_last": "close",
             "size_sum": "volume",
-            "price_total_sum": "total",
+            "traded_value_sum": "traded_value",
             "count_all": "transactions",
         }
     )
     table = table.append_column(
-        "vwap", pa_compute.divide(table["total"], table["volume"])
+        "vwap", pa_compute.divide(table["traded_value"], table["volume"])
     )
+    table = table.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
+    # Calculate cumulative traded value by ticker
+    traded_values_by_ticker = table.group_by("ticker").aggregate([("traded_value", "list")])
+    cumulative_sum_arrays = [
+        pa_compute.cumulative_sum(pa.array(values_list)) for values_list in traded_values_by_ticker["traded_value_list"].combine_chunks()
+    ]
+    table = table.append_column("cumulative_traded_value", pa.concat_arrays(cumulative_sum_arrays))
+    
     # table.append_column('date', pa.array([date] * len(table), type=pa.date32()))
     # table.append_column('year', pa.array([date.year] * len(table), type=pa.uint16()))
     # table.append_column('month', pa.array([date.month] * len(table), type=pa.uint8()))
