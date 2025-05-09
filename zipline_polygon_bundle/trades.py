@@ -146,6 +146,8 @@ def custom_aggs_schema(raw: bool = False) -> pa.Schema:
             pa.field("window_start", timestamp_type, nullable=False),
             pa.field("transactions", pa.int64(), nullable=False),
             pa.field("vwap", price_type, nullable=False),
+            pa.field("traded_value", price_type, nullable=False),
+            pa.field("cumulative_traded_value", price_type, nullable=False),
             pa.field("date", pa.date32(), nullable=False),
             pa.field("year", pa.uint16(), nullable=False),
             pa.field("month", pa.uint8(), nullable=False),
@@ -253,10 +255,10 @@ def trades_to_custom_aggs(
             "count_all": "transactions",
         }
     )
+    table = table.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
     table = table.append_column(
         "vwap", pa_compute.divide(table["traded_value"], table["volume"])
     )
-    table = table.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
     # Calculate cumulative traded value by ticker
     traded_values_by_ticker = table.group_by("ticker").aggregate([("traded_value", "list")])
     cumulative_sum_arrays = [
