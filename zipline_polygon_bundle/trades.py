@@ -230,7 +230,7 @@ def trades_to_custom_aggs(
             table["sip_timestamp"], multiple=config.agg_timedelta.seconds, unit="second"
         ),
     )
-    table = table.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
+    table = table.sort_by([("ticker", "ascending"), ("sip_timestamp", "ascending")])
     table = table.group_by(["ticker", "window_start"], use_threads=False).aggregate(
         [
             ("price", "first"),
