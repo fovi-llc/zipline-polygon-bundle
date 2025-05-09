@@ -280,12 +280,7 @@ def trades_to_custom_aggs(
             [to_partition_key(ticker) for ticker in table.column("ticker").to_pylist()]
         ),
     )
-    table = table.sort_by([("window_start", "ascending"), ("ticker", "ascending")])
     # print(f"aggs {date=} {table.to_pandas().head()=}")
-    # TODO: Use the inverted filter to get the trades that were ignored for these aggs.
-    # Use a separate function?  Maybe make the filter in a separate function and share it.
-    # ignored_trades_table = table.filter(pa_compute.invert(filter))
-    # return table, ignored_trades_table
     return table
 
 
