@@ -131,9 +131,10 @@ def cast_trades(trades) -> pa.Table:
     return trades.append_column("condition_values", condition_values)
 
 
-def custom_aggs_schema(raw: bool = False) -> pa.Schema:
-    # timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz=tz)
-    timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz="UTC")
+# TODO: The default timezone should always be from config.calendar.tz.key.
+# Not changing that now because Zipline code expects the data to be UTC.
+def custom_aggs_schema(raw: bool = False, tz: str = "UTC") -> pa.Schema:
+    timestamp_type = pa.int64() if raw else pa.timestamp("ns", tz=tz)
     price_type = pa.float64()
     return pa.schema(
         [
