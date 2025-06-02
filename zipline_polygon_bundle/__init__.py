@@ -16,6 +16,14 @@ from .trades import get_aggs_dates, generate_csv_trades_tables
 from .quotes import quotes_schema, quotes_dataset, cast_quotes
 # from .tickers_and_names import load_all_tickers, merge_tickers, ticker_names_from_merged_tickers, get_ticker_universe
 from .tickers_and_names import PolygonAssets, get_ticker_universe
+from .superbars import (
+    superbars_schema, 
+    superbars_dataset,
+    trades_and_quotes_to_superbars,
+    convert_trades_and_quotes_to_superbars,
+    get_superbars_dates,
+    load_condition_codes,
+)
 
 
 __all__ = [
@@ -50,4 +58,11 @@ __all__ = [
     # "ticker_names_from_merged_tickers",
     "PolygonAssets",
     "get_ticker_universe",
+    # Superbars functionality
+    "superbars_schema",
+    "superbars_dataset", 
+    "trades_and_quotes_to_superbars",
+    "convert_trades_and_quotes_to_superbars",
+    "get_superbars_dates",
+    "load_condition_codes",
 ]

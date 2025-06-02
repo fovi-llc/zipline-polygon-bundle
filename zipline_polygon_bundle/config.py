@@ -108,6 +108,10 @@ class PolygonConfig:
         self.custom_aggs_dates_path = os.path.join(self.custom_asset_files_dir, "aggs_dates.json")
         self.by_ticker_dates_path = os.path.join(self.custom_asset_files_dir, "by_ticker_dates.json")
 
+        # Superbars configuration - extended aggregates with trade and quote data
+        self.superbars_dir = os.path.join(self.custom_asset_files_dir, "superbars")
+        self.superbars_dates_path = os.path.join(self.custom_asset_files_dir, "superbars_dates.json")
+
         self.minute_by_ticker_dir = os.path.join(
             self.custom_asset_files_dir, "minute_by_ticker_v1"
         )
@@ -237,6 +241,11 @@ class PolygonConfig:
             return None, None
         paths = sorted(paths)
         return self.file_path_to_name(paths[0]), self.file_path_to_name(paths[-1])
+
+    @property 
+    def superbars_arrow_dir(self):
+        """Directory path for superbars data."""
+        return self.superbars_dir
 
 
 if __name__ == "__main__":
