@@ -11,6 +11,8 @@ import sys
 import argparse
 import datetime
 from typing import Optional
+import pandas as pd
+from exchange_calendars.calendar_helpers import parse_date, Date
 
 # Add the project root to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -101,21 +103,21 @@ Environment Variables:
     
     args = parser.parse_args()
     
-    # Determine date range
+    # Ensure parse_date returns the correct type for PolygonConfig
     if args.days:
-        end_date = datetime.date.today() if not args.end_date else datetime.datetime.strptime(args.end_date, "%Y-%m-%d").date()
-        start_date = end_date - datetime.timedelta(days=args.days)
+        end_date = parse_date(args.end_date) if args.end_date else Date(datetime.date.today())
+        start_date = Date(end_date - datetime.timedelta(days=args.days))
     else:
-        start_date = datetime.datetime.strptime(args.start_date, "%Y-%m-%d").date() if args.start_date else None
-        end_date = datetime.datetime.strptime(args.end_date, "%Y-%m-%d").date() if args.end_date else None
-    
+        start_date = parse_date(args.start_date, raise_oob=False) if args.start_date else None
+        end_date = parse_date(args.end_date, raise_oob=False) if args.end_date else None
+
     # Create config
     try:
         config = PolygonConfig(
             environ=os.environ,
             calendar_name=args.calendar,
-            start_date=start_date.isoformat() if start_date else None,
-            end_date=end_date.isoformat() if end_date else None,
+            start_date=start_date,
+            end_date=end_date,
             agg_time=args.agg_time,
         )
     except Exception as e:
