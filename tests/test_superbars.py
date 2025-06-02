@@ -18,6 +18,8 @@ import pandas as pd
 import pyarrow as pa
 import numpy as np
 
+from exchange_calendars.calendar_helpers import parse_date
+
 from zipline_polygon_bundle import (
     PolygonConfig,
     superbars_schema,
@@ -185,8 +187,8 @@ def test_superbars_generation():
             config = PolygonConfig(
                 environ=environ,
                 calendar_name='XNYS',
-                start_date='2024-01-02',
-                end_date='2024-01-02',
+                start_date=parse_date("2024-01-02", raise_oob=False),
+                end_date=parse_date("2024-01-02", raise_oob=False),
                 agg_time='1minute'
             )
             

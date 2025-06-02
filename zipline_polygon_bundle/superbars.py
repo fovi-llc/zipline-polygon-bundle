@@ -1,12 +1,9 @@
 from .config import PolygonConfig, PARTITION_COLUMN_NAME, to_partition_key
 from .trades import (
-    trades_schema,
-    trades_dataset,
     generate_csv_trades_tables,
     ordinary_trades_mask,
     append_by_date_keys,
     by_date_hive_partitioning,
-    EXCLUDED_CONDITION_CODES,
 )
 from .quotes import quotes_schema, cast_quotes
 
@@ -137,7 +134,7 @@ def superbars_schema() -> pa.Schema:
 
 def load_condition_codes() -> dict:
     """Load condition codes from JSON file."""
-    conditions_path = "/media/nvm4t2/Projects/zipline-polygon-bundle/data/conditions-stocks.json"
+    conditions_path = "data/conditions-stocks.json"
     with open(conditions_path, 'r') as f:
         data = json.load(f)
     
@@ -147,8 +144,6 @@ def load_condition_codes() -> dict:
     
     for condition in data['results']:
         cond_id = condition['id']
-        cond_type = condition['type']
-        
         if 'trade' in condition.get('data_types', []):
             trade_conditions[cond_id] = condition
         if any(dt in condition.get('data_types', []) for dt in ['bbo', 'nbbo']):
@@ -237,23 +232,85 @@ def trades_and_quotes_to_superbars(
     quotes_table: pa.Table = None,
 ) -> pa.Table:
     """
-    Convert trades and quotes data to superbars with extended features.
+    Convert trades and quotes data to superbars with extended features using PyArrow.
     """
     print(f"Processing superbars for {date=}")
-    
+
     if len(trades_table) == 0:
         # Return empty table with correct schema
         return pa.table([], schema=superbars_schema())
-    
+
     # Add window_start column for aggregation
-    trades_table = trades_table.append_column(
-        "window_start",
-        pa_compute.floor_temporal(
-            trades_table["sip_timestamp"], 
-            multiple=config.agg_timedelta.seconds, 
-            unit="second"
-        ),
+    window_start = pa_compute.floor_temporal(
+        trades_table["sip_timestamp"],
+        multiple=config.agg_timedelta.seconds,
+        unit="second",
     )
+    trades_table = trades_table.append_column("window_start", window_start)
+
+    # Add traded_value column
+    traded_value = pa_compute.multiply(trades_table["price"], trades_table["size"])
+    trades_table = trades_table.append_column("traded_value", traded_value)
+
+    # Perform group-by aggregation using PyArrow
+    grouped = trades_table.group_by(["ticker", "window_start"])
+    aggregated = grouped.aggregate(
+        [
+            ("price", "min"),
+            ("price", "max"),
+            ("price", "mean"),
+            ("price", "stddev"),
+            ("price", "sum"),
+            ("size", "sum"),
+            ("size", "mean"),
+            ("size", "stddev"),
+            ("size", "min"),
+            ("size", "max"),
+            ("traded_value", "sum"),
+            ("sip_timestamp", "min"),
+            ("sip_timestamp", "max"),
+        ]
+    )
+
+    # Rename columns to match schema
+    column_mapping = {
+        "price_min": "low",
+        "price_max": "high",
+        "price_mean": "vwap",
+        "price_stddev": "price_std",
+        "price_sum": "traded_value",
+        "size_sum": "volume",
+        "size_mean": "trade_size_mean",
+        "size_stddev": "trade_size_std",
+        "size_min": "trade_size_min",
+        "size_max": "trade_size_max",
+        "sip_timestamp_min": "time_to_first_trade",
+        "sip_timestamp_max": "time_to_last_trade",
+    }
+
+    for old_name, new_name in column_mapping.items():
+        aggregated = aggregated.rename_columns({old_name: new_name})
+
+    # Add cumulative metrics
+    aggregated = aggregated.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
+    cumulative_traded_value = pa_compute.cumulative_sum(aggregated["traded_value"])
+    cumulative_volume = pa_compute.cumulative_sum(aggregated["volume"])
+    aggregated = aggregated.append_column("cumulative_traded_value", cumulative_traded_value)
+    aggregated = aggregated.append_column("cumulative_volume", cumulative_volume)
+
+    # Cast to the correct schema
+    schema = superbars_schema()
+    columns_dict = {}
+
+    for field in schema:
+        if field.name in aggregated.column_names:
+            columns_dict[field.name] = aggregated[field.name]
+        else:
+            # Create null array for missing columns
+            null_array = pa.nulls(len(aggregated), type=field.type)
+            columns_dict[field.name] = null_array
+
+    return pa.table(columns_dict, schema=schema)
     
     # Add traded_value column
     trades_table = trades_table.append_column(
@@ -319,7 +376,7 @@ def trades_and_quotes_to_superbars(
     ).dt.total_seconds() * 1000  # milliseconds
     
     basic_aggs['time_to_last_trade'] = (
-        pd.to_datetime(basic_aggs['last_trade_time']) - window_start_ts  
+        pd.to_datetime(basic_aggs['last_trade_time']) - window_start_ts
     ).dt.total_seconds() * 1000  # milliseconds
     
     basic_aggs['trading_time_span'] = (
