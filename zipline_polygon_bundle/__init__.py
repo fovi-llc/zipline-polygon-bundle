@@ -9,7 +9,8 @@ from .nyse_all_hours_calendar import NYSE_ALL_HOURS, register_nyse_all_hours_cal
 from .concat_all_aggs import concat_all_aggs_from_csv, generate_csv_agg_tables
 from .adjustments import load_splits, load_dividends, load_conditions
 from .trades import trades_schema, trades_dataset, cast_trades, ordinary_trades_mask
-from .trades import custom_aggs_partitioning, custom_aggs_schema, trades_to_custom_aggs, convert_trades_to_custom_aggs
+from .trades import by_date_hive_partitioning, append_by_date_keys
+from .trades import custom_aggs_schema, trades_to_custom_aggs, convert_trades_to_custom_aggs
 from .trades import get_aggs_dates, generate_csv_trades_tables
 # from .compute_signals import compute_signals_for_all_custom_aggs
 from .quotes import quotes_schema, quotes_dataset, cast_quotes
@@ -35,7 +36,8 @@ __all__ = [
     "ordinary_trades_mask",
     "get_aggs_dates",
     "generate_csv_trades_tables",
-    "custom_aggs_partitioning",
+    "by_date_hive_partitioning",
+    "append_by_date_keys",
     "custom_aggs_schema",
     "trades_to_custom_aggs",
     "convert_trades_to_custom_aggs",

@@ -1,6 +1,6 @@
 from zipline_polygon_bundle.config import PolygonConfig
 from zipline_polygon_bundle import get_ticker_universe
-from zipline_polygon_bundle import custom_aggs_partitioning, custom_aggs_schema
+from zipline_polygon_bundle import by_date_hive_partitioning, custom_aggs_schema
 
 import os
 import argparse
@@ -102,7 +102,7 @@ def label_price_runs_df(config: PolygonConfig, valid_tickers: pa.Array) -> pd.Da
         aggs_ds = pa_ds.dataset(config.custom_aggs_dir,
                                 format="parquet",
                                 schema=custom_aggs_schema(),
-                                partitioning=custom_aggs_partitioning())
+                                partitioning=by_date_hive_partitioning())
         date_filter_expr = ((pc.field('year') == date.year)
                             & (pc.field('month') == date.month)
                             & (pc.field('date') == date.to_pydatetime().date()))

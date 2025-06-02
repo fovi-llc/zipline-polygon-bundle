@@ -36,7 +36,7 @@ EXCLUDED_CONDITION_CODES = {
     # 33,  # Sold + Stopped
     41,  # Trade Thru Exempt
     52,  # Contingent Trade
-    53   # Qualified Contingent Trade
+    53,  # Qualified Contingent Trade
 }
 
 
@@ -118,8 +118,12 @@ def cast_strings_to_list(
 def ordinary_trades_mask(table: pa.Table) -> pa.BooleanArray:
     conditions_dict = table["conditions"].combine_chunks().dictionary_encode()
     list_of_codes = cast_strings_to_list(conditions_dict.dictionary).to_pylist()
-    code_dictionary = pa.array(set(codes).isdisjoint(EXCLUDED_CONDITION_CODES) for codes in list_of_codes)
-    include_mask = pa.DictionaryArray.from_arrays(conditions_dict.indices, code_dictionary).dictionary_decode()
+    code_dictionary = pa.array(
+        set(codes).isdisjoint(EXCLUDED_CONDITION_CODES) for codes in list_of_codes
+    )
+    include_mask = pa.DictionaryArray.from_arrays(
+        conditions_dict.indices, code_dictionary
+    ).dictionary_decode()
     return pa_compute.and_(include_mask, pa_compute.equal(table["correction"], "0"))
 
 
@@ -144,6 +148,7 @@ def custom_aggs_schema(raw: bool = False, tz: str = "UTC") -> pa.Schema:
             pa.field("close", price_type, nullable=False),
             pa.field("high", price_type, nullable=False),
             pa.field("low", price_type, nullable=False),
+            # TODO: Add odd lot stats
             pa.field("window_start", timestamp_type, nullable=False),
             pa.field("transactions", pa.int64(), nullable=False),
             pa.field("vwap", price_type, nullable=False),
@@ -157,13 +162,24 @@ def custom_aggs_schema(raw: bool = False, tz: str = "UTC") -> pa.Schema:
     )
 
 
-def custom_aggs_partitioning() -> pa.Schema:
+def by_date_hive_partitioning() -> pa.Schema:
     return pa_ds.partitioning(
         pa.schema(
             [("year", pa.uint16()), ("month", pa.uint8()), ("date", pa.date32())]
         ),
         flavor="hive",
     )
+
+
+def append_by_date_keys(date: datetime.date, table: pa.Table) -> pa.Table:
+    table = table.append_column("date", pa.array(np.full(len(table), date)))
+    table = table.append_column(
+        "year", pa.array(np.full(len(table), date.year), type=pa.uint16())
+    )
+    table = table.append_column(
+        "month", pa.array(np.full(len(table), date.month), type=pa.uint8())
+    )
+    return table
 
 
 def get_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
@@ -174,7 +190,7 @@ def get_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
         config.aggs_dir,
         format="parquet",
         schema=custom_aggs_schema(),
-        partitioning=custom_aggs_partitioning(),
+        partitioning=by_date_hive_partitioning(),
     )
     return set(
         [
@@ -261,22 +277,21 @@ def trades_to_custom_aggs(
         "vwap", pa_compute.divide(table["traded_value"], table["volume"])
     )
     # Calculate cumulative traded value by ticker
-    traded_values_by_ticker = table.group_by("ticker").aggregate([("traded_value", "list")])
+    traded_values_by_ticker = table.group_by("ticker").aggregate(
+        [("traded_value", "list")]
+    )
     cumulative_sum_arrays = [
-        pa_compute.cumulative_sum(pa.array(values_list)) for values_list in traded_values_by_ticker["traded_value_list"].combine_chunks()
+        pa_compute.cumulative_sum(pa.array(values_list))
+        for values_list in traded_values_by_ticker["traded_value_list"].combine_chunks()
     ]
-    table = table.append_column("cumulative_traded_value", pa.concat_arrays(cumulative_sum_arrays))
-    
+    table = table.append_column(
+        "cumulative_traded_value", pa.concat_arrays(cumulative_sum_arrays)
+    )
+
     # table.append_column('date', pa.array([date] * len(table), type=pa.date32()))
     # table.append_column('year', pa.array([date.year] * len(table), type=pa.uint16()))
     # table.append_column('month', pa.array([date.month] * len(table), type=pa.uint8()))
-    table = table.append_column("date", pa.array(np.full(len(table), date)))
-    table = table.append_column(
-        "year", pa.array(np.full(len(table), date.year), type=pa.uint16())
-    )
-    table = table.append_column(
-        "month", pa.array(np.full(len(table), date.month), type=pa.uint8())
-    )
+    table = append_by_date_keys(date, table)
     table = table.append_column(
         PARTITION_COLUMN_NAME,
         pa.array(
@@ -314,12 +329,12 @@ def convert_trades_to_custom_aggs(
 
     for date, trades_table in generate_csv_trades_tables(config):
         pa_ds.write_dataset(
-            trades_to_custom_aggs(config,
-                                  date,
-                                  trades_table.filter(ordinary_trades_mask(trades_table))),
+            trades_to_custom_aggs(
+                config, date, trades_table.filter(ordinary_trades_mask(trades_table))
+            ),
             filesystem=config.filesystem,
             base_dir=config.aggs_dir,
-            partitioning=custom_aggs_partitioning(),
+            partitioning=by_date_hive_partitioning(),
             format="parquet",
             existing_data_behavior="overwrite_or_ignore",
             file_visitor=file_visitor,
@@ -377,7 +392,7 @@ def get_by_ticker_aggs_dates(config: PolygonConfig) -> set[datetime.date]:
         config.by_ticker_aggs_arrow_dir,
         format="parquet",
         schema=custom_aggs_schema(),
-        partitioning=custom_aggs_partitioning(),
+        partitioning=by_date_hive_partitioning(),
     )
     return set(
         [
@@ -396,7 +411,13 @@ def batches_for_date(aggs_ds: pa_ds.Dataset, date: pd.Timestamp):
     print(f"table for {date=}")
     # return aggs_ds.scanner(filter=date_filter_expr).to_batches()
     table = aggs_ds.scanner(filter=date_filter_expr).to_table()
-    table = table.sort_by([("part", "ascending"), ("ticker", "ascending"), ("window_start", "ascending"), ])
+    table = table.sort_by(
+        [
+            ("part", "ascending"),
+            ("ticker", "ascending"),
+            ("window_start", "ascending"),
+        ]
+    )
     return table.to_batches()
 
 
@@ -483,7 +504,7 @@ def scatter_custom_aggs_to_by_ticker(config, overwrite=False) -> str:
         config.aggs_dir,
         format="parquet",
         schema=custom_aggs_schema(),
-        partitioning=custom_aggs_partitioning(),
+        partitioning=by_date_hive_partitioning(),
     )
     by_ticker_schema = aggs_ds.schema
     partitioning = pa_ds.partitioning(

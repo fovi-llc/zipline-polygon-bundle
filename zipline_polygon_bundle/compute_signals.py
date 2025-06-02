@@ -1,5 +1,5 @@
 from .config import PolygonConfig
-from .trades import custom_aggs_schema, custom_aggs_partitioning
+from .trades import custom_aggs_schema, by_date_hive_partitioning
 
 import datetime
 import numpy as np
@@ -177,7 +177,7 @@ def iterate_all_aggs_tables(
             config.aggs_dir,
             format="parquet",
             schema=custom_aggs_schema(tz=config.calendar.tz.key),
-            partitioning=custom_aggs_partitioning(),
+            partitioning=by_date_hive_partitioning(),
         )
         date_filter_expr = (
             (pa_compute.field("year") == date.year)
@@ -253,7 +253,7 @@ def compute_signals_for_all_aggs(
                 table,
                 filesystem=to_config.filesystem,
                 base_dir=to_config.aggs_dir,
-                partitioning=custom_aggs_partitioning(),
+                partitioning=by_date_hive_partitioning(),
                 format="parquet",
                 existing_data_behavior="overwrite_or_ignore",
                 file_visitor=file_visitor,
