@@ -101,15 +101,15 @@ def cast_strings_to_list(
     """Cast a PyArrow StringArray of comma-separated numbers to a ListArray of values."""
 
     # Create a mask to identify empty strings
-    is_empty = pa_compute.equal(pa_compute.utf8_trim_whitespace(string_array), "")
+    is_empty = pa_compute.equal(pa_compute.utf8_trim_whitespace(string_array), "")  # type: ignore
 
     # Use replace_with_mask to replace empty strings with the default ("0")
-    filled_column = pa_compute.replace_with_mask(
+    filled_column = pa_compute.replace_with_mask(  # type: ignore
         string_array, is_empty, pa.scalar(default)
     )
 
     # Split the strings by comma
-    split_array = pa_compute.split_pattern(filled_column, pattern=separator)
+    split_array = pa_compute.split_pattern(filled_column, pattern=separator)  # type: ignore
 
     # Cast each element in the resulting lists to integers
     return pa_compute.cast(split_array, pa.list_(value_type))
@@ -124,7 +124,7 @@ def ordinary_trades_mask(table: pa.Table) -> pa.BooleanArray:
     include_mask = pa.DictionaryArray.from_arrays(
         conditions_dict.indices, code_dictionary
     ).dictionary_decode()
-    return pa_compute.and_(include_mask, pa_compute.equal(table["correction"], "0"))
+    return pa_compute.and_(include_mask, pa_compute.equal(table["correction"], "0"))  # type: ignore
 
 
 def cast_trades(trades) -> pa.Table:
@@ -241,11 +241,11 @@ def trades_to_custom_aggs(
 ) -> pa.Table:
     print(f"{date=} {pa.default_memory_pool()=}")
     table = table.append_column(
-        "traded_value", pa_compute.multiply(table["price"], table["size"])
+        "traded_value", pa_compute.multiply(table["price"], table["size"])  # type: ignore
     )
     table = table.append_column(
         "window_start",
-        pa_compute.floor_temporal(
+        pa_compute.floor_temporal(  # type: ignore
             table["sip_timestamp"], multiple=config.agg_timedelta.seconds, unit="second"
         ),
     )
@@ -274,14 +274,14 @@ def trades_to_custom_aggs(
     )
     table = table.sort_by([("ticker", "ascending"), ("window_start", "ascending")])
     table = table.append_column(
-        "vwap", pa_compute.divide(table["traded_value"], table["volume"])
+        "vwap", pa_compute.divide(table["traded_value"], table["volume"])  # type: ignore
     )
     # Calculate cumulative traded value by ticker
     traded_values_by_ticker = table.group_by("ticker").aggregate(
         [("traded_value", "list")]
     )
     cumulative_sum_arrays = [
-        pa_compute.cumulative_sum(pa.array(values_list))
+        pa_compute.cumulative_sum(pa.array(values_list))  # type: ignore
         for values_list in traded_values_by_ticker["traded_value_list"].combine_chunks()
     ]
     table = table.append_column(
