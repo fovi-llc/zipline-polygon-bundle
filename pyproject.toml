@@ -54,3 +54,33 @@ filterwarnings = [
     # note the use of single quote below to denote "raw" strings in TOML
     'ignore:co_lnotab is deprecated, use co_lines instead:DeprecationWarning',
 ]
+
+[tool.pyright]
+include = ["zipline_polygon_bundle"]
+exclude = ["**/__pycache__"]
+reportMissingImports = false
+reportMissingModuleSource = false
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
+reportUnknownLambdaType = false
+reportUnknownParameterType = false
+pythonVersion = "3.10"
+
+[tool.pylint]
+disable = [
+    "import-error",
+    "no-member",
+    "too-many-locals",
+    "too-many-statements",
+    "too-many-branches"
+]
+
+[tool.mypy]
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_any_generics = true
+check_untyped_defs = true
+no_implicit_reexport = true
