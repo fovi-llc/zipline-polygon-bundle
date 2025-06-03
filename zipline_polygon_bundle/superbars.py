@@ -4,6 +4,7 @@ from .trades import (
     ordinary_trades_mask,
     append_by_date_keys,
     by_date_hive_partitioning,
+    trades_schema,
 )
 from .quotes import quotes_schema, cast_quotes
 
@@ -13,7 +14,15 @@ import os
 import json
 
 import pyarrow as pa
-import pyarrow.compute as pc
+import pyarrow.compute as pa_compute
+import pyarrow.csv as pa_csv
+import pyarrow.dataset as pa_ds
+import pyarrow.fs as pa_fs
+import pandas as pd
+import numpy as np
+
+import pyarrow as pa
+import pyarrow.compute as pa_compute
 import pyarrow.csv as pa_csv
 import pyarrow.dataset as pa_ds
 import pyarrow.fs as pa_fs
@@ -248,8 +257,8 @@ def identify_retail_trf_trades(price_series, exchange_series):
     retail_buy = np.zeros(len(price_series))
     retail_sell = np.zeros(len(price_series))
 
-    # Only consider TRF trades (exchange code 'D' or similar)
-    trf_mask = exchange_series.str.contains('TRF|D', na=False)
+    # Only consider TRF trades (exchange code 4)
+    trf_mask = exchange_series == 4
 
     if trf_mask.any():
         # Calculate fraction of penny
@@ -344,7 +353,7 @@ def trades_and_quotes_to_superbars(
         return pa.table(empty_data, schema=superbars_schema())
 
     # Add window_start column for aggregation
-    window_start = pc.floor_temporal(
+    window_start = pa_compute.floor_temporal(
         trades_table["sip_timestamp"],
         multiple=config.agg_timedelta.seconds,
         unit="second",
@@ -435,7 +444,7 @@ def calculate_single_superbar(ticker, window_start, trades_group, quotes_table, 
     bar['total_trades'] = len(trades_sorted)
 
     # Separate exchange vs FINRA volume (simplified)
-    finra_mask = trades_sorted.get('exchange', '').str.contains('TRF|FINRA', na=False)
+    finra_mask = trades_sorted['exchange'] == 4  # TRF exchange code
     bar['finra_volume'] = trades_sorted[finra_mask]['size'].sum() if finra_mask.any() else 0
     bar['volume'] = bar['volume'] - bar['finra_volume']  # Exchange-only volume
 
@@ -490,7 +499,7 @@ def calculate_single_superbar(ticker, window_start, trades_group, quotes_table, 
     # Retail TRF identification
     if len(trades_sorted) > 0:
         retail_buy, retail_sell = identify_retail_trf_trades(
-            trades_sorted['price'], trades_sorted.get('exchange', pd.Series([''] * len(trades_sorted)))
+            trades_sorted['price'], trades_sorted.get('exchange', pd.Series([0] * len(trades_sorted)))
         )
         bar['retail_trf_buy_size'] = trades_sorted[retail_buy.astype(bool)]['size'].sum()
         bar['retail_trf_sell_size'] = trades_sorted[retail_sell.astype(bool)]['size'].sum()
@@ -595,6 +604,49 @@ def generate_csv_quotes_tables(
             continue
 
 
+def generate_csv_trades_and_quotes_tables(
+    config: PolygonConfig, overwrite: bool = False
+) -> Iterator[Tuple[datetime.date, pa.Table, pa.Table]]:
+    """Generator for combined trades and quotes tables from flatfile CSVs."""
+    schedule = config.calendar.trading_index(
+        start=config.start_timestamp, end=config.end_timestamp, period="1D"
+    )
+    for timestamp in schedule:
+        date: datetime.date = timestamp.to_pydatetime().date()
+        
+        # Load trades data
+        trades_csv_path = config.date_to_csv_file_path(date)
+        if not os.path.exists(trades_csv_path):
+            continue
+            
+        try:
+            convert_options = pa_csv.ConvertOptions(column_types=trades_schema(raw=True))
+            trades = pa_csv.read_csv(trades_csv_path, convert_options=convert_options)
+            trades = trades.cast(trades_schema())
+        except Exception as e:
+            print(f"Error loading trades for {date}: {e}")
+            continue
+        
+        # Load quotes data
+        quotes_csv_path = f"{config.quotes_dir}/{date.strftime('%Y/%m/%Y-%m-%d.csv.gz')}"
+        quotes_table = None
+        
+        if os.path.exists(quotes_csv_path):
+            try:
+                convert_options = pa_csv.ConvertOptions(column_types=quotes_schema(raw=True))
+                quotes_table = pa_csv.read_csv(quotes_csv_path, convert_options=convert_options)
+                quotes_table = cast_quotes(quotes_table)
+            except Exception as e:
+                print(f"Error loading quotes for {date}: {e}")
+                quotes_table = None
+        
+        yield date, trades, quotes_table
+        
+        del trades
+        if quotes_table is not None:
+            del quotes_table
+
+
 def convert_trades_and_quotes_to_superbars(
     config: PolygonConfig, overwrite: bool = False
 ) -> str:
@@ -610,19 +662,12 @@ def convert_trades_and_quotes_to_superbars(
 
     print(f"Generating superbars to {superbars_dir}")
 
-    # Get trades and quotes data generators
-    trades_generator = generate_csv_trades_tables(config, overwrite)
-    quotes_generator = dict(generate_csv_quotes_tables(config, overwrite))
-
     def file_visitor(written_file):
         print(f"Written: {written_file.path}")
 
-    for date, trades_table in trades_generator:
+    for date, trades_table, quotes_table in generate_csv_trades_and_quotes_tables(config, overwrite):
         # Filter to ordinary trades only
         filtered_trades = trades_table.filter(ordinary_trades_mask(trades_table))
-
-        # Get corresponding quotes data
-        quotes_table = quotes_generator.get(date)
 
         # Generate superbars
         superbars_table = trades_and_quotes_to_superbars(
@@ -640,10 +685,6 @@ def convert_trades_and_quotes_to_superbars(
                 existing_data_behavior="overwrite_or_ignore",
                 file_visitor=file_visitor,
             )
-
-        del trades_table
-        if quotes_table is not None:
-            del quotes_table
 
     print(f"Generated superbars to {superbars_dir}")
     return superbars_dir
