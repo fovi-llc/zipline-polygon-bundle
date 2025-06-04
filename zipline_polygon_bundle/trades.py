@@ -3,7 +3,7 @@ from .config import PolygonConfig, PARTITION_COLUMN_NAME, to_partition_key
 from typing import Iterator, Tuple
 
 import pyarrow as pa
-import pyarrow.compute as pa_compute
+import pyarrow.compute as pa_compute  # type: ignore
 import pyarrow.csv as pa_csv
 import pyarrow.dataset as pa_ds
 import pyarrow.fs as pa_fs
