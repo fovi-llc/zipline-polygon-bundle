@@ -178,3 +178,10 @@ aws s3 sync s3://flatfiles/us_stocks_sip/day_aggs_v1 \
 aws s3 sync s3://flatfiles/us_stocks_sip \
     $POLYGON_DATA_DIR/flatfiles/us_stocks_sip \
     --checksum-mode ENABLED  --endpoint-url https://files.polygon.io;
+
+
+curl "https://api.polygon.io/v3/reference/conditions?asset_class=stocks&order=asc&limit=1000&sort=data_types&apiKey=$POLYGON_API_KEY" > data/polygon/conditions.json
+curl "https://api.polygon.io/v3/reference/conditions?asset_class=stocks&data_type=trade&order=asc&limit=1000&sort=id&apiKey=$POLYGON_API_KEY" > data/polygon/conditions-trade.json
+curl "https://api.polygon.io/v3/reference/conditions?asset_class=stocks&data_type=nbbo&order=asc&limit=1000&sort=id&apiKey=$POLYGON_API_KEY" > data/polygon/conditions-quote.json
+
+curl "https://api.polygon.io/v3/reference/exchanges?asset_class=stocks&locale=us&apiKey=$POLYGON_API_KEY" > data/polygon/exchanges.json

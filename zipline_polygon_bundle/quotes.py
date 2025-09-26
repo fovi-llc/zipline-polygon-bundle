@@ -38,23 +38,23 @@ def quotes_schema(raw: bool = False) -> pa.Schema:
     # trf_timestamp: int64
 
     return pa.schema(
-            [
-                pa.field("ticker", pa.string(), nullable=False),
-                pa.field("ask_exchange", pa.int8(), nullable=False),
-                pa.field("ask_price", price_type, nullable=False),
-                pa.field("ask_size", pa.int64(), nullable=False),
-                pa.field("bid_exchange", pa.int8(), nullable=False),
-                pa.field("bid_price", price_type, nullable=False),
-                pa.field("bid_size", pa.int64(), nullable=False),
-                pa.field("conditions", pa.string(), nullable=False),
-                pa.field("indicators", pa.string(), nullable=False),
-                pa.field("participant_timestamp", timestamp_type, nullable=False),
-                pa.field("sequence_number", pa.int64(), nullable=False),
-                pa.field("sip_timestamp", timestamp_type, nullable=False),
-                pa.field("tape", pa.int8(), nullable=False),
-                pa.field("trf_timestamp", timestamp_type, nullable=False),
-            ]
-        )
+        [
+            pa.field("ticker", pa.string(), nullable=False),
+            pa.field("ask_exchange", pa.int8(), nullable=False),
+            pa.field("ask_price", price_type, nullable=False),
+            pa.field("ask_size", pa.int64(), nullable=False),
+            pa.field("bid_exchange", pa.int8(), nullable=False),
+            pa.field("bid_price", price_type, nullable=False),
+            pa.field("bid_size", pa.int64(), nullable=False),
+            pa.field("conditions", pa.string(), nullable=False),
+            pa.field("indicators", pa.string(), nullable=False),
+            pa.field("participant_timestamp", timestamp_type, nullable=False),
+            pa.field("sequence_number", pa.int64(), nullable=False),
+            pa.field("sip_timestamp", timestamp_type, nullable=False),
+            pa.field("tape", pa.int8(), nullable=False),
+            pa.field("trf_timestamp", timestamp_type, nullable=False),
+        ]
+    )
 
 
 def quotes_dataset(config: PolygonConfig) -> pa_ds.Dataset:
@@ -71,31 +71,17 @@ def quotes_dataset(config: PolygonConfig) -> pa_ds.Dataset:
         fsspec.glob(os.path.join(config.quotes_dir, config.csv_paths_pattern))
     )
 
-    return pa_ds.FileSystemDataset.from_paths(paths,
-                                              format=pa_ds.CsvFileFormat(),
-                                              schema=quotes_schema(raw=True),
-                                              filesystem=config.filesystem)
-
-
-def cast_strings_to_list(string_array, separator=",", default="0", value_type=pa.uint8()):
-    """Cast a PyArrow StringArray of comma-separated numbers to a ListArray of values."""
-
-    # Create a mask to identify empty strings
-    is_empty = pa_compute.equal(pa_compute.utf8_trim_whitespace(string_array), "")
-
-    # Use replace_with_mask to replace empty strings with the default ("0")
-    filled_column = pa_compute.replace_with_mask(string_array, is_empty, pa.scalar(default))
-
-    # Split the strings by comma
-    split_array = pa_compute.split_pattern(filled_column, pattern=separator)
-
-    # Cast each element in the resulting lists to integers
-    int_list_array = pa_compute.cast(split_array, pa.list_(value_type))
-
-    return int_list_array
+    return pa_ds.FileSystemDataset.from_paths(
+        paths,
+        format=pa_ds.CsvFileFormat(),
+        schema=quotes_schema(raw=True),
+        filesystem=config.filesystem,
+    )
 
 
 def cast_quotes(quotes):
     quotes = quotes.cast(quotes_schema())
-    condition_values = cast_strings_to_list(quotes.column("conditions").combine_chunks())
-    return quotes.append_column('condition_values', condition_values)
+    condition_values = cast_strings_to_list(
+        quotes.column("conditions").combine_chunks()
+    )
+    return quotes.append_column("condition_values", condition_values)
